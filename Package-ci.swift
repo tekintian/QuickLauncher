@@ -10,7 +10,7 @@ let package = Package(
     ],
     dependencies: [
         // Use remote ShortcutRecorder dependency for CI builds
-        .package(url: "https://github.com/ShortCutRecorder/ShortcutRecorder.git", from: "3.4.0")
+        .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
     ],
     targets: [
         // 这里定义项目的主要目标

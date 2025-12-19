@@ -3,7 +3,7 @@
 ## 🎯 架构变更
 
 **重要**: 已实现双模式依赖管理：
-- **GitHub CI**: 使用远程依赖 `https://github.com/ShortCutRecorder/ShortcutRecorder.git`
+- **GitHub CI**: 使用远程依赖 `https://github.com/tekintian/ShortcutRecorder.git`
 - **本地开发**: 使用本地依赖 `./LocalDependencies/ShortcutRecorder`
 
 详细信息请参考: [CI vs 本地依赖配置说明](./CI_VS_LOCAL_DEPS.md)
@@ -79,7 +79,7 @@ Updated `.gitmodules` to include the proper URL:
 ```gitmodules
 [submodule "LocalDependencies/ShortcutRecorder"]
 	path = LocalDependencies/ShortcutRecorder
-	url = https://github.com/ShortCutRecorder/ShortcutRecorder.git
+	url = https://github.com/tekintian/ShortcutRecorder.git
 ```
 
 ### 5. Added Fallback Support
@@ -132,7 +132,7 @@ After these fixes:
 ## 🔗 Dependencies
 
 - **ShortcutRecorder**: Local dependency managed via git submodule
-- **Repository**: https://github.com/ShortCutRecorder/ShortcutRecorder.git
+- **Repository**: https://github.com/tekintian/ShortcutRecorder.git
 - **Version**: v3.4.0 (commit 2761ed5b54ddd7f042445a7b887fe5bcaf70e638)
 
 The fixes ensure that all path arguments are properly quoted, variable names don't contain spaces, and dependencies are properly resolved in the CI environment.
@@ -154,7 +154,7 @@ repositoryURL = "file://./LocalDependencies/ShortcutRecorder";
 cp QuickLauncher.xcodeproj/project.pbxproj QuickLauncher.xcodeproj/project-local.pbxproj
 
 # 替换为远程依赖路径
-sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/ShortCutRecorder/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
+sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/tekintian/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
 ```
 
 构建完成后自动恢复原始配置。

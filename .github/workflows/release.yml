@@ -29,7 +29,7 @@ jobs:
         cp QuickLauncher.xcodeproj/project.pbxproj QuickLauncher.xcodeproj/project-local.pbxproj
         
         # Update Xcode project to use remote ShortcutRecorder
-        sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/ShortCutRecorder/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
+        sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/tekintian/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
         
         # Also update Package.swift for consistency
         cat > Package-ci.swift << 'EOF'
@@ -45,7 +45,7 @@ jobs:
             ],
             dependencies: [
                 // Use remote ShortcutRecorder dependency for CI builds
-                .package(url: "https://github.com/ShortCutRecorder/ShortcutRecorder.git", from: "3.4.0")
+                .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
             ],
             targets: [
                 // 这里定义项目的主要目标

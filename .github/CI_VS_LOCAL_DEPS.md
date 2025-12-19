@@ -3,7 +3,7 @@
 ## 🎯 目标
 
 实现在不同环境下使用不同的依赖源：
-- **GitHub CI**: 使用远程GitHub依赖 `https://github.com/ShortCutRecorder/ShortcutRecorder.git`
+- **GitHub CI**: 使用远程GitHub依赖 `https://github.com/tekintian/ShortcutRecorder.git`
 - **本地开发**: 使用本地依赖 `./LocalDependencies/ShortcutRecorder`
 
 ## 📁 配置文件
@@ -21,7 +21,7 @@ CI workflow会临时修改Package.swift为：
 ```swift
 dependencies: [
     // Use remote ShortcutRecorder dependency for CI builds
-    .package(url: "https://github.com/ShortCutRecorder/ShortcutRecorder.git", from: "3.4.0")
+    .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
 ]
 ```
 
@@ -57,7 +57,7 @@ dependencies: [
        # 生成CI专用的Package.swift
        cat > Package-ci.swift << 'EOF'
        // CI专用配置 - 使用远程依赖
-       .package(url: "https://github.com/ShortCutRecorder/ShortcutRecorder.git", from: "3.4.0")
+       .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
        EOF
        
        # 备份并切换

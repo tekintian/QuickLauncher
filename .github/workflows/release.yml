@@ -1,0 +1,312 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: macos-14
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+        
+    - name: Cache Swift Package Manager
+      uses: actions/cache@v4
+      with:
+        path: |
+          .build
+          ~/Library/Developer/Xcode/DerivedData
+          LocalDependencies
+        key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', '*.xcodeproj/**') }}
+        restore-keys: |
+          ${{ runner.os }}-spm-
+          
+    - name: Build Release
+      run: |
+        # Set minimum macOS version for compatibility
+        export MACOSX_DEPLOYMENT_TARGET=10.15
+        
+        # Clean previous builds
+        rm -rf build
+        rm -rf DerivedData*
+        
+        # Build Intel version for macOS 10.15 compatibility using Xcode project
+        echo "🏗️ Building Intel (x86_64) version..."
+        xcodebuild -project QuickLauncher.xcodeproj \
+          -scheme QuickLauncher \
+          -configuration Release \
+          -arch x86_64 \
+          -derivedDataPath DerivedData-Intel \
+          MACOSX_DEPLOYMENT_TARGET=10.15 \
+          ONLY_ACTIVE_ARCH=NO \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          -allowProvisioningUpdates \
+          clean build
+        
+        # Copy Intel binary
+        cp "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
+        
+        # Build ARM64 version for macOS 11.0 compatibility
+        echo "🏗️ Building Apple Silicon (ARM64) version..."
+        xcodebuild -project QuickLauncher.xcodeproj \
+          -scheme QuickLauncher \
+          -configuration Release \
+          -arch arm64 \
+          -derivedDataPath DerivedData-ARM64 \
+          MACOSX_DEPLOYMENT_TARGET=11.0 \
+          ONLY_ACTIVE_ARCH=NO \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          -allowProvisioningUpdates \
+          clean build
+        
+        # Copy ARM64 binary
+        cp "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
+        
+        # Verify binary compatibility
+        echo "🔍 Checking Intel binary compatibility:"
+        file QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher
+        
+        echo "🔍 Checking ARM64 binary compatibility:"
+        file QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher
+        
+        # List available binaries
+        echo "📋 Available binaries:"
+        ls -la QuickLauncher-*.app
+      
+    - name: Package Applications
+      run: |
+        # Create Intel version
+        echo "📦 Packaging Intel version..."
+        mkdir -p Release/Intel
+        
+        # Ensure the app has correct permissions and structure
+        chmod -R 755 QuickLauncher-Intel.app
+        mv QuickLauncher-Intel.app Release/Intel/
+        
+        # Update Info.plist for Intel version
+        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.15" "Release/Intel/QuickLauncher.app/Contents/Info.plist"
+        
+        # Create ARM64 version
+        echo "📦 Packaging ARM64 version..."
+        mkdir -p Release/ARM64
+        
+        # Ensure the app has correct permissions and structure
+        chmod -R 755 QuickLauncher-ARM64.app
+        mv QuickLauncher-ARM64.app Release/ARM64/
+        
+        # Update Info.plist for ARM64 version
+        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "Release/ARM64/QuickLauncher.app/Contents/Info.plist"
+        
+        # Copy Resources and localization files to both versions
+        echo "🌍 Copying resources and localization files..."
+        for arch in Intel ARM64; do
+          # Copy Assets if they exist
+          if [ -d "QuickLauncher/Assets.xcassets" ]; then
+            cp -r QuickLauncher/Assets.xcassets "Release/$arch/QuickLauncher.app/Contents/Resources/"
+          fi
+          
+          # Copy localization files
+          if [ -d "QuickLauncher/de.lproj" ]; then
+            mkdir -p "Release/$arch/QuickLauncher.app/Contents/Resources/"
+            cp -r QuickLauncher/*.lproj "Release/$arch/QuickLauncher.app/Contents/Resources/" 2>/dev/null || true
+          fi
+          
+          # Copy MainMenu.xib if needed
+          if [ -f "QuickLauncher/MainMenu.xib" ]; then
+            mkdir -p "Release/$arch/QuickLauncher.app/Contents/Resources/"
+            cp QuickLauncher/MainMenu.xib "Release/$arch/QuickLauncher.app/Contents/Resources/"
+          fi
+          
+          echo "✅ $arch resources copied"
+        done
+        
+        # Verify app structure
+        for arch in Intel ARM64; do
+          echo "🔍 Verifying $arch app structure:"
+          find "Release/$arch/QuickLauncher.app" -name "*.png" -o -name "*.icns" | head -5 || echo "No icon files found"
+          ls -la "Release/$arch/QuickLauncher.app/Contents/Resources/" | head -10 || echo "No Resources directory found"
+        done
+        
+    - name: Code Sign (Self-Signed)
+      run: |
+        # Apply ad-hoc signatures to both versions
+        echo "🔐 Signing Intel version..."
+        codesign --force --deep --sign "-" --options runtime Release/Intel/QuickLauncher.app
+        codesign --verify --verbose Release/Intel/QuickLauncher.app || true
+        
+        echo "🔐 Signing ARM64 version..."
+        codesign --force --deep --sign "-" --options runtime Release/ARM64/QuickLauncher.app
+        codesign --verify --verbose Release/ARM64/QuickLauncher.app || true
+        
+    - name: Code Sign (Optional - Developer Certificate)
+      if: env.APPLE_SIGNING_IDENTITY != ''
+      run: |
+        echo "🏛️ Applying developer certificate signature..."
+        codesign --force --verify --verbose --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" Release/Intel/QuickLauncher.app
+        codesign --force --verify --verbose --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" Release/ARM64/QuickLauncher.app
+      env:
+        APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        
+    - name: Create DMG
+      run: |
+        # Create DMG installers for both architectures
+        chmod +x scripts/create-simple-dmg.sh
+        
+        echo "📦 Creating Intel DMG installer..."
+        ./scripts/create-simple-dmg.sh "Release/Intel/QuickLauncher.app" "QuickLauncher-Intel.dmg"
+        
+        echo "📦 Creating ARM64 DMG installer..."
+        ./scripts/create-simple-dmg.sh "Release/ARM64/QuickLauncher.app" "QuickLauncher-ARM64.dmg"
+        
+    - name: Create ZIP
+      run: |
+        # Create ZIP archives for both architectures
+        cd Release/Intel
+        zip -r ../../QuickLauncher-Intel.zip QuickLauncher.app
+        cd ../ARM64
+        zip -r ../../QuickLauncher-ARM64.zip QuickLauncher.app
+        cd ../..
+        
+    - name: Generate Checksum
+      run: |
+        # Generate SHA256 checksums for all release files
+        shasum -a 256 QuickLauncher-Intel.dmg > QuickLauncher-Intel.dmg.sha256
+        shasum -a 256 QuickLauncher-ARM64.dmg > QuickLauncher-ARM64.dmg.sha256
+        shasum -a 256 QuickLauncher-Intel.zip > QuickLauncher-Intel.zip.sha256
+        shasum -a 256 QuickLauncher-ARM64.zip > QuickLauncher-ARM64.zip.sha256
+        
+    - name: Generate Release Notes
+      run: |
+        cat > release_notes.md << 'EOF'
+        # 🚀 QuickLauncher ${{ github.ref_name }}
+        
+        ## 🏗️ 架构支持说明
+        
+        本版本支持多架构，请根据你的 Mac 芯片选择合适的版本：
+        
+        | 架构版本 | 支持系统 | 适用设备 | 下载文件 |
+        |---------|---------|---------|---------|
+        **Intel (x86_64)** | macOS 10.15+ | Intel 芯片 Mac | `QuickLauncher-Intel.dmg/zip` |
+        **Apple Silicon (ARM64)** | macOS 11.0+ | M123 芯片 Mac | `QuickLauncher-ARM64.dmg/zip` |
+        
+        ### 🔧 安装方法
+        
+        1. **DMG 安装包** (推荐)
+           - 根据芯片选择对应版本：`QuickLauncher-Intel.dmg` 或 `QuickLauncher-ARM64.dmg`
+           - 双击挂载，拖拽应用到 Applications 文件夹
+           - 首次运行可能需要允许运行
+        
+        2. **ZIP 压缩包**
+           - 根据芯片选择：`QuickLauncher-Intel.zip` 或 `QuickLauncher-ARM64.zip`
+           - 解压后将 `QuickLauncher.app` 复制到 Applications 文件夹
+        
+        ### 🔐 权限设置
+        
+        QuickLauncher 需要以下权限才能正常工作：
+        
+        **必需权限：**
+        - **Apple Events 权限**：用于与 Finder 交互，获取文件路径
+        - **辅助功能权限**：用于监听快捷键和系统事件（如需要）
+        
+        **设置方法：**
+        1. 打开 **系统设置 > 隐私与安全性**
+        2. 点击 **辅助功能** 或 **自动化**
+        3. 添加 QuickLauncher 并勾选允许
+        4. 重启应用使权限生效
+        
+        ### ✨ 功能特性
+        
+        - 🚀 **快速启动**：一键启动常用的应用和脚本
+        - 📂 **路径管理**：快速复制和访问文件路径
+        - ⌨️ **快捷键支持**：自定义快捷键提高效率
+        - 🎯 **状态栏集成**：随时随地访问常用功能
+        - 🍎 **原生体验**：专为 macOS 设计，界面简洁优雅
+        - 🌍 **多语言支持**：支持中文和英文界面
+        
+        ### 🔧 主要功能
+        
+        1. **快速启动器**
+           - 支持添加常用应用、脚本、文件路径
+           - 智能搜索和分类管理
+           - 自定义快捷键启动
+        
+        2. **路径工具**
+           - 一键复制当前文件路径
+           - 支持相对路径和绝对路径
+           - 路径格式转换
+        
+        3. **脚本执行**
+           - 支持 Shell 脚本快速执行
+           - 常用命令收藏和管理
+           - 执行结果查看
+        
+        ### 🖥️ 系统要求
+        
+        - **Intel 版本**: macOS 10.15 (Catalina) 或更高版本
+        - **ARM64 版本**: macOS 11.0 (Big Sur) 或更高版本
+        - 需要 Apple Events 和辅助功能权限
+        
+        ### 📝 使用方法
+        
+        1. 启动应用后，状态栏会显示 QuickLauncher 图标
+        2. 点击状态栏图标打开主界面
+        3. 添加常用的应用、脚本或文件路径
+        4. 设置快捷键或直接点击启动
+        
+        ### ⌨️ 默认快捷键
+        
+        - `⌘ + ⇧ + Q`：打开 QuickLauncher 主界面
+        - `⌘ + ⇧ + C`：复制当前文件路径
+        - `⌘ + ⇧ + R`：刷新应用列表
+        
+        ### 🔗 相关链接
+        
+        - [使用文档](https://github.com/tekintian/QuickLauncher/blob/main/README.md)
+        - [快速开始](https://github.com/tekintian/QuickLauncher/blob/main/QUICK_START.md)
+        - [图标更新工具](https://github.com/tekintian/QuickLauncher/blob/main/scripts/README_update_icons.md)
+        - [问题反馈](https://github.com/tekintian/QuickLauncher/issues)
+        
+        ---
+        
+        **📊 文件校验**
+        - SHA256 校验和文件已提供，请验证文件完整性
+        - `shasum -a 256 -c QuickLauncher-Intel.dmg.sha256` (Intel 版本)
+        - `shasum -a 256 -c QuickLauncher-ARM64.dmg.sha256` (ARM64 版本)
+        
+        **⚠️ 免责声明**
+        本软件仅供学习和个人使用，使用风险自负。
+        
+        **🔄 更新日志**
+        请查看 [CHANGELOG.md](https://github.com/tekintian/QuickLauncher/blob/main/CHANGELOG.md) 了解详细更新内容。
+        EOF
+        
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          QuickLauncher-Intel.dmg
+          QuickLauncher-Intel.dmg.sha256
+          QuickLauncher-ARM64.dmg
+          QuickLauncher-ARM64.dmg.sha256
+          QuickLauncher-Intel.zip
+          QuickLauncher-Intel.zip.sha256
+          QuickLauncher-ARM64.zip
+          QuickLauncher-ARM64.zip.sha256
+        body_path: release_notes.md
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -38,6 +38,20 @@ Temporary Items
 ## Build generated
 build/
 DerivedData/
+DerivedData-*/
+QuickLauncher-*.app/
+
+## Release artifacts
+*.dmg
+*.dmg.sha256
+*.zip
+*.zip.sha256
+Release/
+temp_dmg_*/
+temp_*.dmg
+
+## CI artifacts
+icon_backup_*/
 
 ## Various settings
 *.pbxuser

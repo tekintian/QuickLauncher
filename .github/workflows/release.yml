@@ -15,19 +15,41 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      with:
-        submodules: recursive
       
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: latest-stable
         
-    - name: Initialize Submodules (Fallback)
-      if: failure()
+    - name: Update Package Dependencies for CI
       run: |
-        echo "🔧 Initializing submodules as fallback..."
-        git submodule update --init --recursive
+        echo "📦 Updating Package.swift to use remote dependencies for CI..."
+        # Create CI-specific Package.swift that uses remote dependencies
+        cat > Package-ci.swift << 'EOF'
+        // swift-tools-version:5.3
+        // Package definition for QuickLauncher with remote dependencies (CI only)
+        
+        import PackageDescription
+        
+        let package = Package(
+            name: "QuickLauncher",
+            platforms: [
+                .macOS(.v10_15)
+            ],
+            dependencies: [
+                // Use remote ShortcutRecorder dependency for CI builds
+                .package(url: "https://github.com/ShortCutRecorder/ShortcutRecorder.git", from: "3.4.0")
+            ],
+            targets: [
+                // 这里定义项目的主要目标
+                // 注意：这主要是为了包解析，实际构建使用Xcode项目
+            ]
+        )
+        EOF
+        
+        # Backup original Package.swift and use CI version
+        cp Package.swift Package-local.swift
+        cp Package-ci.swift Package.swift
         
     - name: Cache Swift Package Manager
       uses: actions/cache@v4
@@ -35,8 +57,7 @@ jobs:
         path: |
           .build
           ~/Library/Developer/Xcode/DerivedData
-          LocalDependencies
-        key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', '*.xcodeproj/**', 'LocalDependencies/**') }}
+        key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', '*.xcodeproj/**') }}
         restore-keys: |
           ${{ runner.os }}-spm-
           
@@ -93,6 +114,12 @@ jobs:
         # List available binaries
         echo "📋 Available binaries:"
         ls -la QuickLauncher-*.app
+        
+        # Restore original Package.swift
+        if [ -f "Package-local.swift" ]; then
+          echo "🔄 Restoring original Package.swift..."
+          cp Package-local.swift Package.swift
+        fi
       
     - name: Package Applications
       run: |

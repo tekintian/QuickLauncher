@@ -1,2 +1,3 @@
 [submodule "LocalDependencies/ShortcutRecorder"]
 	path = LocalDependencies/ShortcutRecorder
+	url = https://github.com/ShortCutRecorder/ShortcutRecorder.git

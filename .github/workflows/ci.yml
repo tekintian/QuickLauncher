@@ -32,8 +32,15 @@ jobs:
         
     - name: Update Package Dependencies for CI
       run: |
-        echo "📦 Updating Package.swift to use remote dependencies for CI..."
-        # Create CI-specific Package.swift that uses remote dependencies
+        echo "📦 Updating Xcode project to use remote dependencies for CI..."
+        
+        # Backup original project file
+        cp QuickLauncher.xcodeproj/project.pbxproj QuickLauncher.xcodeproj/project-local.pbxproj
+        
+        # Update Xcode project to use remote ShortcutRecorder
+        sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/ShortCutRecorder/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
+        
+        # Also update Package.swift for consistency
         cat > Package-ci.swift << 'EOF'
         // swift-tools-version:5.3
         // Package definition for QuickLauncher with remote dependencies (CI only)
@@ -59,6 +66,8 @@ jobs:
         # Backup original Package.swift and use CI version
         cp Package.swift Package-local.swift
         cp Package-ci.swift Package.swift
+        
+        echo "✅ Dependencies updated for CI build"
         
     - name: Cache Swift Package Manager
       uses: actions/cache@v4
@@ -96,10 +105,15 @@ jobs:
         echo "📋 App structure:"
         find "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" -name "*.plist" | head -3
         
-        # Restore original Package.swift
+        # Restore original files
         if [ -f "Package-local.swift" ]; then
           echo "🔄 Restoring original Package.swift..."
           cp Package-local.swift Package.swift
+        fi
+        
+        if [ -f "QuickLauncher.xcodeproj/project-local.pbxproj" ]; then
+          echo "🔄 Restoring original Xcode project..."
+          cp QuickLauncher.xcodeproj/project-local.pbxproj QuickLauncher.xcodeproj/project.pbxproj
         fi
         
     - name: Lint

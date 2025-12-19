@@ -136,3 +136,29 @@ After these fixes:
 - **Version**: v3.4.0 (commit 2761ed5b54ddd7f042445a7b887fe5bcaf70e638)
 
 The fixes ensure that all path arguments are properly quoted, variable names don't contain spaces, and dependencies are properly resolved in the CI environment.
+
+## 🔧 关键修复：Xcode项目依赖路径
+
+### 问题根源
+Xcode项目中的Swift Package配置是硬编码在 `.pbxproj` 文件中的，即使修改了项目根目录的 `Package.swift`，Xcode仍然会使用项目文件中配置的依赖路径：
+
+```
+repositoryURL = "file://./LocalDependencies/ShortcutRecorder";
+```
+
+### 解决方案
+在CI构建时动态修改Xcode项目文件：
+
+```bash
+# 备份原始项目文件
+cp QuickLauncher.xcodeproj/project.pbxproj QuickLauncher.xcodeproj/project-local.pbxproj
+
+# 替换为远程依赖路径
+sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/ShortCutRecorder/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
+```
+
+构建完成后自动恢复原始配置。
+
+### 双模式依赖管理
+- **GitHub CI**: 使用远程依赖，无需submodule
+- **本地开发**: 使用本地依赖，快速构建

@@ -17,7 +17,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
     strategy:
       fail-fast: false
       matrix:
@@ -63,7 +63,6 @@ jobs:
       with:
         path: |
           .build
-          ~/Library/Developer/Xcode/DerivedData
         key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}-${{ hashFiles('**/*.xcodeproj') }}
         restore-keys: |
           ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}-
@@ -84,6 +83,7 @@ jobs:
         DERIVED_DATA_PATH="DerivedData-${{ matrix.config_name }}"
         
         # 执行构建命令，修复了-deploymentTarget参数为正确的MACOSX_DEPLOYMENT_TARGET
+        # 使用ONLY_ACTIVE_ARCH=YES来避免Swift模块冲突
         xcodebuild clean build \
           -project "$XCODE_PROJECT" \
           -scheme "$SCHEME" \
@@ -99,7 +99,7 @@ jobs:
           BUNDLE_VERSION="1" \
           MACOSX_DEPLOYMENT_TARGET="${{ matrix.deployment_target }}" \
           ENABLE_BITCODE=NO \
-          ONLY_ACTIVE_ARCH=NO \
+          ONLY_ACTIVE_ARCH=YES \
           COMPRESS_PNG_RESOURCES=YES \
           DEAD_CODE_STRIPPING="YES" \
           STRIP_INSTALLED_PRODUCT="YES" \
@@ -477,7 +477,7 @@ jobs:
 
   verify-builds:
     needs: build
-    runs-on: macos-latest
+    runs-on: macos-14
     
     steps:
     - name: Checkout

@@ -48,7 +48,7 @@ xcodebuild -project QuickLauncher.xcodeproj \
            DEAD_CODE_STRIPPING=YES \
            STRIP_INSTALLED_PRODUCT=YES \
            COPY_PHASE_STRIP=YES \
-           ONLY_ACTIVE_ARCH=NO \
+           ONLY_ACTIVE_ARCH=YES \
            COMPRESS_PNG_RESOURCES=YES \
            build
 

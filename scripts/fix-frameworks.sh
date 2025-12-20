@@ -20,8 +20,11 @@ if [ ! -d "$FRAMEWORKS_DIR" ]; then
     exit 0
 fi
 
-# Find and fix all frameworks
-find "$FRAMEWORKS_DIR" -name "*.framework" -type d | while read framework; do
+# Process each framework using a for loop to avoid subshell issues
+for framework in "$FRAMEWORKS_DIR"/*.framework; do
+    # Skip if no frameworks found
+    [ -d "$framework" ] || continue
+    
     FRAMEWORK_NAME=$(basename "$framework" .framework)
     echo "  📦 Fixing $FRAMEWORK_NAME.framework"
     
@@ -55,65 +58,92 @@ find "$FRAMEWORKS_DIR" -name "*.framework" -type d | while read framework; do
     fi
     
     # Create Current -> A symlink
-    cd "$framework/Versions"
-    if [ ! -L "Current" ]; then
-        ln -sf A Current
+    CURRENT_LINK="$framework/Versions/Current"
+    if [ ! -L "$CURRENT_LINK" ]; then
+        ln -sf A "$CURRENT_LINK"
         echo "    🔗 Created Current -> A symlink"
     else
-        CURRENT_TARGET=$(readlink Current 2>/dev/null || echo "")
+        CURRENT_TARGET=$(readlink "$CURRENT_LINK" 2>/dev/null || echo "")
         if [ "$CURRENT_TARGET" != "A" ]; then
             echo "    🔄 Fixing Current symlink (was: $CURRENT_TARGET, should be: A)"
-            rm -f Current
-            ln -sf A Current
+            rm -f "$CURRENT_LINK"
+            ln -sf A "$CURRENT_LINK"
         fi
     fi
-    cd - >/dev/null
     
     # Create top-level binary symlink
-    cd "$framework"
-    if [ ! -L "$FRAMEWORK_NAME" ]; then
-        ln -sf Versions/Current/$FRAMEWORK_NAME $FRAMEWORK_NAME
+    BINARY_LINK="$framework/$FRAMEWORK_NAME"
+    if [ ! -L "$BINARY_LINK" ]; then
+        ln -sf "Versions/Current/$FRAMEWORK_NAME" "$BINARY_LINK"
         echo "    🔗 Created $FRAMEWORK_NAME -> Versions/Current/$FRAMEWORK_NAME symlink"
     else
-        BINARY_TARGET=$(readlink $FRAMEWORK_NAME 2>/dev/null || echo "")
+        BINARY_TARGET=$(readlink "$BINARY_LINK" 2>/dev/null || echo "")
         if [ "$BINARY_TARGET" != "Versions/Current/$FRAMEWORK_NAME" ]; then
             echo "    🔄 Fixing $FRAMEWORK_NAME symlink (was: $BINARY_TARGET, should be: Versions/Current/$FRAMEWORK_NAME)"
-            rm -f $FRAMEWORK_NAME
-            ln -sf Versions/Current/$FRAMEWORK_NAME $FRAMEWORK_NAME
+            rm -f "$BINARY_LINK"
+            ln -sf "Versions/Current/$FRAMEWORK_NAME" "$BINARY_LINK"
         fi
     fi
     
     # Create Resources symlink
-    if [ ! -L "Resources" ]; then
-        ln -sf Versions/Current/Resources Resources
+    RESOURCES_LINK="$framework/Resources"
+    if [ ! -L "$RESOURCES_LINK" ]; then
+        ln -sf "Versions/Current/Resources" "$RESOURCES_LINK"
         echo "    🔗 Created Resources -> Versions/Current/Resources symlink"
     else
-        RESOURCES_TARGET=$(readlink Resources 2>/dev/null || echo "")
+        RESOURCES_TARGET=$(readlink "$RESOURCES_LINK" 2>/dev/null || echo "")
         if [ "$RESOURCES_TARGET" != "Versions/Current/Resources" ]; then
             echo "    🔄 Fixing Resources symlink (was: $RESOURCES_TARGET, should be: Versions/Current/Resources)"
-            rm -f Resources
-            ln -sf Versions/Current/Resources Resources
+            rm -f "$RESOURCES_LINK"
+            ln -sf "Versions/Current/Resources" "$RESOURCES_LINK"
         fi
     fi
-    cd - >/dev/null
     
     # Verify final structure
     echo "    ✅ Verifying structure..."
     FRAMEWORK_SIZE=$(du -sh "$framework" | cut -f1)
     echo "      📊 Framework size: $FRAMEWORK_SIZE"
     
-    # Check that top-level items are symlinks
-    if [ -f "$framework/$FRAMEWORK_NAME" ] && [ ! -L "$framework/$FRAMEWORK_NAME" ]; then
+    # Check that top-level items are symlinks and verify their targets
+    if [ -L "$BINARY_LINK" ]; then
+        BINARY_TARGET=$(readlink "$BINARY_LINK" 2>/dev/null || echo "")
+        if [ "$BINARY_TARGET" = "Versions/Current/$FRAMEWORK_NAME" ]; then
+            echo "      ✅ $FRAMEWORK_NAME symlink is correct: $BINARY_TARGET"
+        else
+            echo "      ❌ $FRAMEWORK_NAME symlink is wrong: $BINARY_TARGET"
+        fi
+    elif [ -f "$BINARY_LINK" ]; then
         echo "      ❌ $FRAMEWORK_NAME is still a file (should be symlink)"
     else
-        echo "      ✅ $FRAMEWORK_NAME is correctly a symlink"
+        echo "      ❌ $FRAMEWORK_NAME link missing"
     fi
     
-    if [ -d "$framework/Resources" ] && [ ! -L "$framework/Resources" ]; then
+    if [ -L "$RESOURCES_LINK" ]; then
+        RESOURCES_TARGET=$(readlink "$RESOURCES_LINK" 2>/dev/null || echo "")
+        if [ "$RESOURCES_TARGET" = "Versions/Current/Resources" ]; then
+            echo "      ✅ Resources symlink is correct: $RESOURCES_TARGET"
+        else
+            echo "      ❌ Resources symlink is wrong: $RESOURCES_TARGET"
+        fi
+    elif [ -d "$RESOURCES_LINK" ]; then
         echo "      ❌ Resources is still a directory (should be symlink)"
     else
-        echo "      ✅ Resources is correctly a symlink"
+        echo "      ❌ Resources link missing"
     fi
+    
+    if [ -L "$CURRENT_LINK" ]; then
+        CURRENT_TARGET=$(readlink "$CURRENT_LINK" 2>/dev/null || echo "")
+        if [ "$CURRENT_TARGET" = "A" ]; then
+            echo "      ✅ Current symlink is correct: $CURRENT_TARGET"
+        else
+            echo "      ❌ Current symlink is wrong: $CURRENT_TARGET"
+        fi
+    else
+        echo "      ❌ Current symlink missing"
+    fi
+    
+    echo "      📁 Framework structure:"
+    ls -la "$framework" | head -10
 done
 
 echo "✅ Framework structure fix completed"

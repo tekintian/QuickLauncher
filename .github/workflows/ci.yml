@@ -76,9 +76,49 @@ jobs:
         # Clean unused libraries
         ./scripts/clean-libs.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
-        # Basic verification only
+        # Verify Framework structure
+        if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" ]; then
+            echo "🔍 Verifying Framework structure..."
+            find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read fw; do
+                fw_name=$(basename "$fw" .framework)
+                echo "  📦 Framework: $fw_name"
+                
+                # Check key symlinks
+                if [ -L "$fw/Versions/Current" ]; then
+                    echo "    ✅ Versions/Current -> $(readlink $fw/Versions/Current)"
+                else
+                    echo "    ❌ Versions/Current symlink missing"
+                fi
+                
+                if [ -L "$fw/$fw_name" ]; then
+                    echo "    ✅ $fw_name -> $(readlink $fw/$fw_name)"
+                else
+                    echo "    ❌ $fw_name symlink missing"
+                fi
+                
+                if [ -L "$fw/Resources" ]; then
+                    echo "    ✅ Resources -> $(readlink $fw/Resources)"
+                else
+                    echo "    ❌ Resources symlink missing"
+                fi
+            done
+        fi
+        
+        # Basic verification
         [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
+        
+        # Optional detailed framework debug (only on failure or when needed)
+        if [ "${{ matrix.config_name }}" = "Intel" ]; then
+            echo "🔍 Running detailed framework debug..."
+            find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | head -1 | while read fw; do
+                ./scripts/debug-framework.sh "$fw"
+            done
+        fi
+        
+        # Show final app size
+        APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
+        echo "📊 Final app size: $APP_SIZE"
         
         echo "✅ ${{ matrix.config_name }} build completed"
 

@@ -1,178 +1,198 @@
-# Description: GitHub Actions workflow to build QuickLauncher for macOS
-# Triggers on push to main, master, or develop branches, and pull requests to these branches.
-# Builds Intel and ARM64 versions, with optional code signing (self-signed or developer certificate).
-# Generates release notes highlighting features, improvements, and installation instructions.
-# author: tekintian@gmail.com   https://dev.tekin.cn
-# date: 2025-12-20
-# version: 1.0.0
-# license: MIT
 name: CI
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ master ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ master ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
-    
     strategy:
+      fail-fast: false
       matrix:
-        arch: [x86_64, arm64]
         include:
-          - arch: x86_64
-            deployment_target: "10.13"
-            config_name: "Intel"
-          - arch: arm64
-            deployment_target: "11.0"
-            config_name: "ARM64"
-    
+          - config_name: Intel
+            architecture: x86_64
+            deployment_target: 10.13
+          - config_name: ARM64
+            architecture: arm64
+            deployment_target: 11.0
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-      
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: latest-stable
-        
-    - name: Update Package Dependencies for CI
+        submodules: recursive
+
+    - name: Update local dependencies for CI build
       run: |
-        echo "📦 Updating Xcode project to use remote dependencies for CI..."
+        echo "🔄 Preparing CI build configuration..."
         
-        # Backup original project file
-        cp QuickLauncher.xcodeproj/project.pbxproj QuickLauncher.xcodeproj/project-local.pbxproj
+        # 备份原始项目文件
+        if [ -f "Package.swift" ]; then
+          cp Package.swift Package-local.swift
+        fi
         
-        # Update Xcode project to use remote ShortcutRecorder
-        sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/tekintian/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
+        if [ -f "QuickLauncher.xcodeproj/project.pbxproj" ]; then
+          cp QuickLauncher.xcodeproj/project.pbxproj QuickLauncher.xcodeproj/project-local.pbxproj
+        fi
         
-        # Also update Package.swift for consistency
-        cat > Package-ci.swift << 'EOF'
-        // swift-tools-version:5.3
-        // Package definition for QuickLauncher with remote dependencies (CI only)
+        # 将本地ShortcutRecorder依赖替换为远程URL
+        echo "🔄 Configuring remote dependencies..."
+        sed -i '' -E 's|\.\./ShortcutRecorder|https://github.com/tekinosman/ShortcutRecorder|g' QuickLauncher.xcodeproj/project.pbxproj
         
-        import PackageDescription
+        # 创建CI专用的Package.swift文件
+        cat > Package-CI.swift << 'EOF'
+          // swift-tools-version:5.3
+
+          import PackageDescription
+
+          let package = Package(
+              name: "QuickLauncher",
+              platforms: [
+                  .macOS(.v10_13)
+              ],
+              products: [
+                  .library(
+                      name: "QuickLauncher",
+                      targets: ["QuickLauncher"]),
+              ],
+              dependencies: [
+                  .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
+              ],
+              targets: [
+                  .target(
+                      name: "QuickLauncher",
+                      dependencies: ["ShortcutRecorder"]),
+              ]
+          )
+          EOF
         
-        let package = Package(
-            name: "QuickLauncher",
-            platforms: [
-                .macOS(.v10_15)
-            ],
-            dependencies: [
-                // Use remote ShortcutRecorder dependency for CI builds
-                .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
-            ],
-            targets: [
-                // 这里定义项目的主要目标
-                // 注意：这主要是为了包解析，实际构建使用Xcode项目
-            ]
-        )
-        EOF
-        
-        # Backup original Package.swift and use CI version
-        cp Package.swift Package-local.swift
-        cp Package-ci.swift Package.swift
-        
-        echo "✅ Dependencies updated for CI build"
-        
-    - name: Cache Swift Package Manager
+        # 备份并替换Package.swift
+        if [ -f "Package.swift" ]; then
+          cp Package.swift Package.swift.backup
+        fi
+        cp Package-CI.swift Package.swift
+
+    - name: Cache Swift Packages
       uses: actions/cache@v4
       with:
         path: |
           .build
           ~/Library/Developer/Xcode/DerivedData
-        key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', '*.xcodeproj/**') }}
+        key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}-${{ hashFiles('**/*.xcodeproj') }}
         restore-keys: |
-          ${{ runner.os }}-spm-
-          
-    - name: Build (${{ matrix.config_name }})
+          ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}-
+
+    - name: Build
       run: |
-        echo "🏗️ Building ${{ matrix.config_name }} version..."
-        export MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }}
+        echo "🚀 Building ${{ matrix.config_name }} configuration..."
         
-        # Build using Xcode project with enhanced parameters
-        xcodebuild -project QuickLauncher.xcodeproj \
-          -scheme QuickLauncher \
+        # 定义构建参数
+        XCODE_PROJECT="QuickLauncher.xcodeproj"
+        SCHEME="QuickLauncher"
+        DERIVED_DATA_PATH="DerivedData-${{ matrix.config_name }}"
+        
+        # 执行构建命令
+        xcodebuild clean build \
+          -project "$XCODE_PROJECT" \
+          -scheme "$SCHEME" \
+          -destination "platform=macOS,arch=${{ matrix.architecture }}" \
+          -derivedDataPath "$DERIVED_DATA_PATH" \
+          -deploymentTarget "${{ matrix.deployment_target }}" \
           -configuration Release \
-          -arch ${{ matrix.arch }} \
-          -derivedDataPath "DerivedData-${{ matrix.config_name }}" \
-          MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }} \
-          ONLY_ACTIVE_ARCH=NO \
           CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          ENABLE_BITCODE=NO \
-          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.app.QuickLauncher \
-          MARKETING_VERSION=1.0.0 \
-          CURRENT_PROJECT_VERSION=1 \
-          DEVELOPMENT_LANGUAGE=en \
-          -allowProvisioningUpdates \
-          clean build
-          
-        # Verify build succeeded
-        echo "🔍 Checking ${{ matrix.config_name }} build results..."
+          CODE_SIGNING_REQUIRED="NO" \
+          CODE_SIGNING_ALLOWED="NO" \
+          PRODUCT_BUNDLE_IDENTIFIER="cn.tekin.app.QuickLauncher" \
+          PRODUCT_NAME="QuickLauncher" \
+          BUNDLE_SHORT_VERSION_STRING="1.0.0" \
+          BUNDLE_VERSION="1" \
+          DEAD_CODE_STRIPPING="YES" \
+          STRIP_INSTALLED_PRODUCT="YES" \
+          COPY_PHASE_STRIP="YES" \
+          STRIP_STYLE="non-global"
         
-        # 显示DerivedData目录结构以帮助调试
-        echo "📁 DerivedData目录结构:"
-        ls -la "DerivedData-${{ matrix.config_name }}"/Build/Products/
+        # 验证构建结果
+        if [ $? -eq 0 ]; then
+          echo "✅ Build completed successfully"
+        else
+          echo "❌ Build failed"
+          exit 1
+        fi
         
-        # 优化的app包查找逻辑，支持不同的构建配置目录结构
+        # 检查DerivedData目录结构
+        echo "📁 Checking DerivedData structure..."
+        ls -la "$DERIVED_DATA_PATH/Build/Products/"
+        
+        # 查找构建的app包
+        echo "🔍 Searching for app bundle..."
         BUILD_CONFIG=""
         APP_PATH=""
-        ARCH="${{ matrix.arch }}"
-
-        # 检查标准的Debug和Release目录
-        if [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" ]; then
+        ARCH="${{ matrix.architecture }}"
+        
+        # 检查标准目录
+        if [ -d "$DERIVED_DATA_PATH/Build/Products/Debug/QuickLauncher.app" ]; then
           BUILD_CONFIG="Debug"
-          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app"
-        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Release/QuickLauncher.app" ]; then
+          APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug/QuickLauncher.app"
+        elif [ -d "$DERIVED_DATA_PATH/Build/Products/Release/QuickLauncher.app" ]; then
           BUILD_CONFIG="Release"
-          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Release/QuickLauncher.app"
-        # 检查带架构名称的构建配置目录（例如 Release-x86_64, Release-arm64）
-        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Release-${ARCH}/QuickLauncher.app" ]; then
-          BUILD_CONFIG="Release-${ARCH}"
-          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Release-${ARCH}/QuickLauncher.app"
-        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug-${ARCH}/QuickLauncher.app" ]; then
-          BUILD_CONFIG="Debug-${ARCH}"
-          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Debug-${ARCH}/QuickLauncher.app"
-        # 检查架构作为子目录的情况（例如 x86_64/Release, arm64/Release）
-        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Release/QuickLauncher.app" ]; then
-          BUILD_CONFIG="${ARCH}/Release"
-          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Release/QuickLauncher.app"
-        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Debug/QuickLauncher.app" ]; then
-          BUILD_CONFIG="${ARCH}/Debug"
-          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Debug/QuickLauncher.app"
-        else
-          # 检查可能的自定义构建配置目录
-          echo "📁 检查自定义构建配置目录:"
-          CUSTOM_CONFIGS=$(ls -la "DerivedData-${{ matrix.config_name }}/Build/Products/" | grep "^d" | awk '{print $9}')
+          APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release/QuickLauncher.app"
+        fi
+        
+        # 如果找不到，检查带架构名称的子目录
+        if [ -z "$BUILD_CONFIG" ]; then
+          if [ -d "$DERIVED_DATA_PATH/Build/Products/Debug-$ARCH/QuickLauncher.app" ]; then
+            BUILD_CONFIG="Debug-$ARCH"
+            APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug-$ARCH/QuickLauncher.app"
+          elif [ -d "$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app" ]; then
+            BUILD_CONFIG="Release-$ARCH"
+            APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app"
+          fi
+        fi
+        
+        # 如果仍然找不到，尝试将架构作为子目录
+        if [ -z "$BUILD_CONFIG" ]; then
+          if [ -d "$DERIVED_DATA_PATH/Build/Products/$ARCH/Debug/QuickLauncher.app" ]; then
+            BUILD_CONFIG="$ARCH/Debug"
+            APP_PATH="$DERIVED_DATA_PATH/Build/Products/$ARCH/Debug/QuickLauncher.app"
+          elif [ -d "$DERIVED_DATA_PATH/Build/Products/$ARCH/Release/QuickLauncher.app" ]; then
+            BUILD_CONFIG="$ARCH/Release"
+            APP_PATH="$DERIVED_DATA_PATH/Build/Products/$ARCH/Release/QuickLauncher.app"
+          fi
+        fi
+        
+        # 检查自定义配置目录
+        if [ -z "$BUILD_CONFIG" ]; then
+          CUSTOM_CONFIGS=$(ls -la "$DERIVED_DATA_PATH/Build/Products/" | grep "^d" | awk '{print $9}')
           
           for config in $CUSTOM_CONFIGS; do
-            if [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/$config/QuickLauncher.app" ]; then
+            if [ -d "$DERIVED_DATA_PATH/Build/Products/$config/QuickLauncher.app" ]; then
               BUILD_CONFIG="$config"
-              APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/$config/QuickLauncher.app"
+              APP_PATH="$DERIVED_DATA_PATH/Build/Products/$config/QuickLauncher.app"
               break
             fi
           done
+        fi
+        
+        # 如果仍然找不到，尝试全局搜索
+        if [ -z "$BUILD_CONFIG" ]; then
+          echo "📁 全局搜索app包:"
+          GLOBAL_APP_PATH=$(find "$DERIVED_DATA_PATH" -name "QuickLauncher.app" -type d | head -1)
           
-          # 如果仍然找不到，尝试全局搜索
-          if [ -z "$BUILD_CONFIG" ]; then
-            echo "📁 全局搜索app包:"
-            GLOBAL_APP_PATH=$(find "DerivedData-${{ matrix.config_name }}" -name "QuickLauncher.app" -type d | head -1)
-            
-            if [ -n "$GLOBAL_APP_PATH" ]; then
-              APP_PATH="$GLOBAL_APP_PATH"
-              BUILD_CONFIG=$(basename "$(dirname "$APP_PATH")")
-            else
-              echo "❌ ${{ matrix.config_name }} build failed - no app bundle found"
-              echo "📁 详细查找所有app包:"
-              find "DerivedData-${{ matrix.config_name }}" -name "*.app" -type d || echo "No app bundles found"
-              echo "📁 查看Products目录完整内容:"
-              find "DerivedData-${{ matrix.config_name }}/Build/Products" -type f -o -type d
-              exit 1
-            fi
+          if [ -n "$GLOBAL_APP_PATH" ]; then
+            APP_PATH="$GLOBAL_APP_PATH"
+            BUILD_CONFIG=$(basename "$(dirname "$APP_PATH")")
+          else
+            echo "❌ ${{ matrix.config_name }} build failed - no app bundle found"
+            echo "📁 详细查找所有app包:"
+            find "$DERIVED_DATA_PATH" -name "*.app" -type d || echo "No app bundles found"
+            echo "📁 查看Products目录完整内容:"
+            find "$DERIVED_DATA_PATH/Build/Products" -type f -o -type d
+            exit 1
           fi
         fi
         
@@ -197,6 +217,60 @@ jobs:
         # Ensure proper permissions
         chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
+        # Remove unused Swift libraries to match local build behavior
+        echo "🗑️  Removing unused Swift libraries..."
+        UNUSED_LIBS=("libswiftCloudKit.dylib" "libswiftContacts.dylib" "libswiftMediaPlayer.dylib" "libswiftMessageUI.dylib" "libswiftVision.dylib")
+        
+        for lib in "${UNUSED_LIBS[@]}"; do
+          LIB_PATH="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/$lib"
+          if [ -f "$LIB_PATH" ]; then
+            rm "$LIB_PATH"
+            echo "    Removed unused library: $lib"
+          fi
+        done
+        
+        # Fix unparsed build variables in all Info.plist files
+        echo "🔧 Fixing unparsed build variables in Info.plist files..."
+        
+        # Define the expected values for build variables
+        PRODUCT_BUNDLE_IDENTIFIER="cn.tekin.app.QuickLauncher"
+        PRODUCT_NAME="QuickLauncher"
+        BUNDLE_SHORT_VERSION_STRING="1.0.0"
+        BUNDLE_VERSION="1"
+        
+        # Find all Info.plist files in the app bundle and fix variables
+        find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" -name "Info.plist" -type f | while read plist_path; do
+          echo "  Fixing variables in: $(basename "$(dirname "$(dirname "$plist_path")")")/Info.plist"
+          
+          # Fix bundle identifier
+          if /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$plist_path" 2>/dev/null | grep -q "\$(PRODUCT_BUNDLE_IDENTIFIER)"; then
+            /usr/libexec/PlistBuddy -c "Set CFBundleIdentifier $PRODUCT_BUNDLE_IDENTIFIER" "$plist_path"
+          fi
+          
+          # Fix executable name
+          if /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$plist_path" 2>/dev/null | grep -q "\$(PRODUCT_NAME)"; then
+            # Use the bundle name as the executable name for non-main app bundles
+            bundle_name=$(basename "$(dirname "$(dirname "$plist_path")")" .bundle)
+            bundle_name=$(basename "$bundle_name" .framework)
+            bundle_name=$(basename "$bundle_name" .appex)
+            /usr/libexec/PlistBuddy -c "Set CFBundleExecutable $bundle_name" "$plist_path"
+          fi
+          
+          # Fix version strings
+          if /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$plist_path" 2>/dev/null | grep -q "\$(BUNDLE_SHORT_VERSION_STRING)"; then
+            /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $BUNDLE_SHORT_VERSION_STRING" "$plist_path"
+          fi
+          
+          if /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$plist_path" 2>/dev/null | grep -q "\$(BUNDLE_VERSION)"; then
+            /usr/libexec/PlistBuddy -c "Set CFBundleVersion $BUNDLE_VERSION" "$plist_path"
+          fi
+          
+          # Fix product name if referenced
+          if /usr/libexec/PlistBuddy -c "Print CFBundleName" "$plist_path" 2>/dev/null | grep -q "\$(PRODUCT_NAME)"; then
+            /usr/libexec/PlistBuddy -c "Set CFBundleName $PRODUCT_NAME" "$plist_path"
+          fi
+        done
+        
         # NOTE: Resources are already compiled and included by Xcode build
         # No need to copy source resources - they would corrupt the built app structure
         
@@ -218,20 +292,7 @@ jobs:
           fi
           
           echo "  Signing plugin: $(basename "$plugin")"
-          codesign --force --sign "-" --options runtime --entitlements <(echo '<?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>com.apple.security.app-sandbox</key>
-              <true/>
-              <key>com.apple.security.files.user-selected.read-write</key>
-              <true/>
-              <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
-              <array>
-                  <string>com.apple.FinderSync</string>
-              </array>
-          </dict>
-          </plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
+          codesign --force --sign "-" --options runtime --entitlements <(echo '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>com.apple.security.app-sandbox</key>\n    <true/>\n    <key>com.apple.security.files.user-selected.read-write</key>\n    <true/>\n    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>\n    <array>\n        <string>com.apple.FinderSync</string>\n    </array>\n</dict>\n</plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
         done
         
         # Sign frameworks
@@ -367,7 +428,7 @@ jobs:
           echo "🔄 Restoring original Xcode project..."
           cp QuickLauncher.xcodeproj/project-local.pbxproj QuickLauncher.xcodeproj/project.pbxproj
         fi
-        
+
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
@@ -410,7 +471,7 @@ jobs:
         done
         
         echo "✅ Basic checks completed"
-        
+
   verify-builds:
     needs: build
     runs-on: macos-latest

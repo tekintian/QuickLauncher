@@ -1,3 +1,11 @@
+# Description: GitHub Actions workflow to build QuickLauncher for macOS
+# Triggers on push to main, master, or develop branches, and pull requests to these branches.
+# Builds Intel and ARM64 versions, with optional code signing (self-signed or developer certificate).
+# Generates release notes highlighting features, improvements, and installation instructions.
+# author: tekintian@gmail.com   https://dev.tekin.cn
+# date: 2025-12-20
+# version: 1.0.0
+# license: MIT
 name: CI
 
 on:
@@ -42,40 +50,13 @@ jobs:
         
         # 将本地ShortcutRecorder依赖替换为远程URL
         echo "🔄 Configuring remote dependencies..."
-        sed -i '' -E 's|\.\./ShortcutRecorder|https://github.com/tekinosman/ShortcutRecorder|g' QuickLauncher.xcodeproj/project.pbxproj
+        sed -i '' -E 's|\.\./ShortcutRecorder|https://github.com/tekintian/ShortcutRecorder.git|g' QuickLauncher.xcodeproj/project.pbxproj
         
-        # 创建CI专用的Package.swift文件
-        cat > Package-CI.swift << 'EOF'
-          // swift-tools-version:5.3
-
-          import PackageDescription
-
-          let package = Package(
-              name: "QuickLauncher",
-              platforms: [
-                  .macOS(.v10_13)
-              ],
-              products: [
-                  .library(
-                      name: "QuickLauncher",
-                      targets: ["QuickLauncher"]),
-              ],
-              dependencies: [
-                  .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
-              ],
-              targets: [
-                  .target(
-                      name: "QuickLauncher",
-                      dependencies: ["ShortcutRecorder"]),
-              ]
-          )
-          EOF
-        
-        # 备份并替换Package.swift
+        # 备份并替换Package.swift为项目中已有的CI版本
         if [ -f "Package.swift" ]; then
           cp Package.swift Package.swift.backup
         fi
-        cp Package-CI.swift Package.swift
+        cp Package-ci.swift Package.swift
 
     - name: Cache Swift Packages
       uses: actions/cache@v4
@@ -96,13 +77,12 @@ jobs:
         SCHEME="QuickLauncher"
         DERIVED_DATA_PATH="DerivedData-${{ matrix.config_name }}"
         
-        # 执行构建命令
+        # 执行构建命令，修复了-deploymentTarget参数为正确的MACOSX_DEPLOYMENT_TARGET
         xcodebuild clean build \
           -project "$XCODE_PROJECT" \
           -scheme "$SCHEME" \
           -destination "platform=macOS,arch=${{ matrix.architecture }}" \
           -derivedDataPath "$DERIVED_DATA_PATH" \
-          -deploymentTarget "${{ matrix.deployment_target }}" \
           -configuration Release \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED="NO" \
@@ -111,6 +91,7 @@ jobs:
           PRODUCT_NAME="QuickLauncher" \
           BUNDLE_SHORT_VERSION_STRING="1.0.0" \
           BUNDLE_VERSION="1" \
+          MACOSX_DEPLOYMENT_TARGET="${{ matrix.deployment_target }}" \
           DEAD_CODE_STRIPPING="YES" \
           STRIP_INSTALLED_PRODUCT="YES" \
           COPY_PHASE_STRIP="YES" \
@@ -292,7 +273,20 @@ jobs:
           fi
           
           echo "  Signing plugin: $(basename "$plugin")"
-          codesign --force --sign "-" --options runtime --entitlements <(echo '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n    <key>com.apple.security.app-sandbox</key>\n    <true/>\n    <key>com.apple.security.files.user-selected.read-write</key>\n    <true/>\n    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>\n    <array>\n        <string>com.apple.FinderSync</string>\n    </array>\n</dict>\n</plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
+          codesign --force --sign "-" --options runtime --entitlements <(echo '<?xml version="1.0" encoding="UTF-8"?>'
+          '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+          '<plist version="1.0">'
+          '<dict>'
+              '<key>com.apple.security.app-sandbox</key>'
+              '<true/>'
+              '<key>com.apple.security.files.user-selected.read-write</key>'
+              '<true/>'
+              '<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>'
+              '<array>'
+                  '<string>com.apple.FinderSync</string>'
+              '</array>'
+          '</dict>'
+          '</plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
         done
         
         # Sign frameworks

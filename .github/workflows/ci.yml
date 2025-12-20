@@ -50,7 +50,7 @@ jobs:
         
         # 将本地ShortcutRecorder依赖替换为远程URL
         echo "🔄 Configuring remote dependencies..."
-        sed -i '' -E 's|\.\./ShortcutRecorder|https://github.com/tekintian/ShortcutRecorder.git|g' QuickLauncher.xcodeproj/project.pbxproj
+        sed -i '' -E 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder"|repositoryURL = "https://github.com/tekintian/ShortcutRecorder.git"|g' QuickLauncher.xcodeproj/project.pbxproj
         
         # 备份并替换Package.swift为项目中已有的CI版本
         if [ -f "Package.swift" ]; then
@@ -70,6 +70,12 @@ jobs:
 
     - name: Build
       run: |
+        # Set up error handling to restore files on failure
+        trap 'echo "❌ Build failed, restoring original files..."; \
+              if [ -f "Package-local.swift" ]; then cp Package-local.swift Package.swift; fi; \
+              if [ -f "QuickLauncher.xcodeproj/project-local.pbxproj" ]; then cp QuickLauncher.xcodeproj/project-local.pbxproj QuickLauncher.xcodeproj/project.pbxproj; fi; \
+              exit 1' ERR
+        
         echo "🚀 Building ${{ matrix.config_name }} configuration..."
         
         # 定义构建参数
@@ -92,6 +98,9 @@ jobs:
           BUNDLE_SHORT_VERSION_STRING="1.0.0" \
           BUNDLE_VERSION="1" \
           MACOSX_DEPLOYMENT_TARGET="${{ matrix.deployment_target }}" \
+          ENABLE_BITCODE=NO \
+          ONLY_ACTIVE_ARCH=NO \
+          COMPRESS_PNG_RESOURCES=YES \
           DEAD_CODE_STRIPPING="YES" \
           STRIP_INSTALLED_PRODUCT="YES" \
           COPY_PHASE_STRIP="YES" \
@@ -105,73 +114,34 @@ jobs:
           exit 1
         fi
         
-        # 检查DerivedData目录结构
+        # Check DerivedData directory structure
         echo "📁 Checking DerivedData structure..."
         ls -la "$DERIVED_DATA_PATH/Build/Products/"
         
-        # 查找构建的app包
+        # Find the built app bundle - simplified search
         echo "🔍 Searching for app bundle..."
-        BUILD_CONFIG=""
         APP_PATH=""
         ARCH="${{ matrix.architecture }}"
         
-        # 检查标准目录
-        if [ -d "$DERIVED_DATA_PATH/Build/Products/Debug/QuickLauncher.app" ]; then
-          BUILD_CONFIG="Debug"
-          APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug/QuickLauncher.app"
-        elif [ -d "$DERIVED_DATA_PATH/Build/Products/Release/QuickLauncher.app" ]; then
-          BUILD_CONFIG="Release"
+        # Since we specified -configuration Release, expect Release configuration
+        if [ -d "$DERIVED_DATA_PATH/Build/Products/Release/QuickLauncher.app" ]; then
           APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release/QuickLauncher.app"
-        fi
-        
-        # 如果找不到，检查带架构名称的子目录
-        if [ -z "$BUILD_CONFIG" ]; then
-          if [ -d "$DERIVED_DATA_PATH/Build/Products/Debug-$ARCH/QuickLauncher.app" ]; then
-            BUILD_CONFIG="Debug-$ARCH"
-            APP_PATH="$DERIVED_DATA_PATH/Build/Products/Debug-$ARCH/QuickLauncher.app"
-          elif [ -d "$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app" ]; then
-            BUILD_CONFIG="Release-$ARCH"
-            APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app"
-          fi
-        fi
-        
-        # 如果仍然找不到，尝试将架构作为子目录
-        if [ -z "$BUILD_CONFIG" ]; then
-          if [ -d "$DERIVED_DATA_PATH/Build/Products/$ARCH/Debug/QuickLauncher.app" ]; then
-            BUILD_CONFIG="$ARCH/Debug"
-            APP_PATH="$DERIVED_DATA_PATH/Build/Products/$ARCH/Debug/QuickLauncher.app"
-          elif [ -d "$DERIVED_DATA_PATH/Build/Products/$ARCH/Release/QuickLauncher.app" ]; then
-            BUILD_CONFIG="$ARCH/Release"
-            APP_PATH="$DERIVED_DATA_PATH/Build/Products/$ARCH/Release/QuickLauncher.app"
-          fi
-        fi
-        
-        # 检查自定义配置目录
-        if [ -z "$BUILD_CONFIG" ]; then
-          CUSTOM_CONFIGS=$(ls -la "$DERIVED_DATA_PATH/Build/Products/" | grep "^d" | awk '{print $9}')
+          BUILD_CONFIG="Release"
+        elif [ -d "$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app" ]; then
+          APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app"
+          BUILD_CONFIG="Release-$ARCH"
+        else
+          # Fallback: global search for app bundle
+          echo "📁 Using global search for app bundle:"
+          APP_PATH=$(find "$DERIVED_DATA_PATH/Build/Products" -name "QuickLauncher.app" -type d | head -1)
           
-          for config in $CUSTOM_CONFIGS; do
-            if [ -d "$DERIVED_DATA_PATH/Build/Products/$config/QuickLauncher.app" ]; then
-              BUILD_CONFIG="$config"
-              APP_PATH="$DERIVED_DATA_PATH/Build/Products/$config/QuickLauncher.app"
-              break
-            fi
-          done
-        fi
-        
-        # 如果仍然找不到，尝试全局搜索
-        if [ -z "$BUILD_CONFIG" ]; then
-          echo "📁 全局搜索app包:"
-          GLOBAL_APP_PATH=$(find "$DERIVED_DATA_PATH" -name "QuickLauncher.app" -type d | head -1)
-          
-          if [ -n "$GLOBAL_APP_PATH" ]; then
-            APP_PATH="$GLOBAL_APP_PATH"
+          if [ -n "$APP_PATH" ]; then
             BUILD_CONFIG=$(basename "$(dirname "$APP_PATH")")
           else
             echo "❌ ${{ matrix.config_name }} build failed - no app bundle found"
-            echo "📁 详细查找所有app包:"
+            echo "📁 Detailed search for all app bundles:"
             find "$DERIVED_DATA_PATH" -name "*.app" -type d || echo "No app bundles found"
-            echo "📁 查看Products目录完整内容:"
+            echo "📁 Products directory contents:"
             find "$DERIVED_DATA_PATH/Build/Products" -type f -o -type d
             exit 1
           fi
@@ -198,9 +168,44 @@ jobs:
         # Ensure proper permissions
         chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
+        # Clean debug symbols to match local build behavior
+        echo "🗑️ Cleaning debug symbols..."
+        find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" -name "*.dSYM" -exec rm -rf {} \; 2>/dev/null || true
+        
+        # Copy localization files (important for Preferences window)
+        echo "🌍 Copying localization files..."
+        if [ -f "scripts/copy_localization.sh" ]; then
+          PROJECT_DIR="$(pwd)"
+          BUILD_DIR="$PROJECT_DIR/build"
+          
+          # Update the copy_localization script to work with CI artifacts
+          LANGUAGES=("zh-Hans" "en" "fr" "ru" "it" "es" "de" "ko" "tr")
+          
+          for lang in "${LANGUAGES[@]}"; do
+            SOURCE_FILE="$PROJECT_DIR/QuickLauncher/PreferencesWindow/${lang}.lproj/Preferences.strings"
+            TARGET_DIR="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/${lang}.lproj"
+            
+            if [ -f "$SOURCE_FILE" ]; then
+              echo "  Copying $lang Preferences.strings"
+              mkdir -p "$TARGET_DIR"
+              cp "$SOURCE_FILE" "$TARGET_DIR/"
+            fi
+          done
+        else
+          echo "⚠️ Localization script not found"
+        fi
+        
         # Remove unused Swift libraries to match local build behavior
         echo "🗑️  Removing unused Swift libraries..."
-        UNUSED_LIBS=("libswiftCloudKit.dylib" "libswiftContacts.dylib" "libswiftMediaPlayer.dylib" "libswiftMessageUI.dylib" "libswiftVision.dylib")
+        UNUSED_LIBS=(
+            "libswiftCloudKit.dylib"
+            "libswiftCoreLocation.dylib" 
+            "libswiftCoreData.dylib"
+            "libswiftMetal.dylib"
+            "libswiftCoreImage.dylib"
+            "libswiftIOKit.dylib"
+            "libswiftQuartzCore.dylib"
+        )
         
         for lib in "${UNUSED_LIBS[@]}"; do
           LIB_PATH="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/$lib"
@@ -412,7 +417,8 @@ jobs:
           fi
         done
         
-        # Restore original files
+        # Restore original files (always run)
+        echo "🔄 Restoring original project files..."
         if [ -f "Package-local.swift" ]; then
           echo "🔄 Restoring original Package.swift..."
           cp Package-local.swift Package.swift
@@ -422,6 +428,9 @@ jobs:
           echo "🔄 Restoring original Xcode project..."
           cp QuickLauncher.xcodeproj/project-local.pbxproj QuickLauncher.xcodeproj/project.pbxproj
         fi
+        
+        # Cleanup backup files
+        rm -f Package-local.swift QuickLauncher.xcodeproj/project-local.pbxproj
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4

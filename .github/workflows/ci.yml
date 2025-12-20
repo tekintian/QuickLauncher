@@ -103,6 +103,27 @@ jobs:
         
         echo "📋 After fix - Framework contents:"
         ls -la "$FRAMEWORKS_DIR"
+        
+        echo "🔍 Verifying symlinks before compression..."
+        if [ -L "$FRAMEWORKS_DIR/QuickLauncherCore" ]; then
+            echo "    ✅ QuickLauncherCore is symlink: $(readlink $FRAMEWORKS_DIR/QuickLauncherCore)"
+        else
+            echo "    ❌ QuickLauncherCore is NOT a symlink"
+            file "$FRAMEWORKS_DIR/QuickLauncherCore"
+        fi
+        
+        if [ -L "$FRAMEWORKS_DIR/Resources" ]; then
+            echo "    ✅ Resources is symlink: $(readlink $FRAMEWORKS_DIR/Resources)"
+        else
+            echo "    ❌ Resources is NOT a symlink"
+        fi
+        
+        if [ -L "$FRAMEWORKS_DIR/Versions/Current" ]; then
+            echo "    ✅ Versions/Current is symlink: $(readlink $FRAMEWORKS_DIR/Versions/Current)"
+        else
+            echo "    ❌ Versions/Current is NOT a symlink"
+        fi
+        
         echo "✅ Framework structure fix completed"
         
         echo "🧹 Running library cleanup script..."
@@ -130,3 +151,4 @@ jobs:
         name: QuickLauncher-${{ matrix.config_name }}-${{ github.run_number }}
         path: CI-Artifacts/
         retention-days: 7
+        compression-level: 0

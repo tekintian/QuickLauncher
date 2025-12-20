@@ -77,12 +77,14 @@ jobs:
           exit 1
         fi
         
+        echo "find app bundle at: $APP_PATH"
+
+        # Step 3: Prepare CI-Artifacts directory
         rm -rf CI-Artifacts
         mkdir -p CI-Artifacts
         # Save build output tar for reference
         mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/build-output-${{ matrix.config_name }}.tar.xz
 
-       
         echo "🧹 Running library cleanup script..."
    
         if [ -f "./scripts/clean-libs.sh" ]; then
@@ -98,18 +100,16 @@ jobs:
         [ -x "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         
         # Step 4: Create final package
-        echo "📦 Creating final package..."
         cd CI-Artifacts
-        # Create a temporary copy with proper name
-        echo "  📋 Copying from: $APP_PATH"
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "$APP_PATH"
+        echo "  📋 Packaging final app bundle: $APP_PATH"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "../$APP_PATH"
        
         echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)"
         
         # Show all packages
         echo "📋 All generated packages:"
         ls -lh *.tar.xz
-        
+        cd ..
         echo "✅ ${{ matrix.config_name }} build completed"
 
     - name: Verify Artifacts

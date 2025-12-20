@@ -84,10 +84,10 @@ jobs:
         
         # 执行构建命令，修复了-deploymentTarget参数为正确的MACOSX_DEPLOYMENT_TARGET
         # 使用ONLY_ACTIVE_ARCH=YES来避免Swift模块冲突
+        # 简化构建命令，与本地构建脚本保持一致
         xcodebuild clean build \
           -project "$XCODE_PROJECT" \
           -scheme "$SCHEME" \
-          -destination "platform=macOS,arch=${{ matrix.architecture }}" \
           -derivedDataPath "$DERIVED_DATA_PATH" \
           -configuration Release \
           CODE_SIGN_IDENTITY="" \
@@ -97,7 +97,6 @@ jobs:
           PRODUCT_NAME="QuickLauncher" \
           BUNDLE_SHORT_VERSION_STRING="1.0.0" \
           BUNDLE_VERSION="1" \
-          MACOSX_DEPLOYMENT_TARGET="${{ matrix.deployment_target }}" \
           ENABLE_BITCODE=NO \
           ONLY_ACTIVE_ARCH=YES \
           COMPRESS_PNG_RESOURCES=YES \
@@ -121,15 +120,11 @@ jobs:
         # Find the built app bundle - simplified search
         echo "🔍 Searching for app bundle..."
         APP_PATH=""
-        ARCH="${{ matrix.architecture }}"
         
         # Since we specified -configuration Release, expect Release configuration
         if [ -d "$DERIVED_DATA_PATH/Build/Products/Release/QuickLauncher.app" ]; then
           APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release/QuickLauncher.app"
           BUILD_CONFIG="Release"
-        elif [ -d "$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app" ]; then
-          APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-$ARCH/QuickLauncher.app"
-          BUILD_CONFIG="Release-$ARCH"
         else
           # Fallback: global search for app bundle
           echo "📁 Using global search for app bundle:"
@@ -150,9 +145,25 @@ jobs:
         echo "✅ Found app bundle in $BUILD_CONFIG configuration at $APP_PATH"
         ls -la "$APP_PATH/Contents/"
         
-        # Check binary
+        # Check binary architecture and verify it matches expected architecture
         echo "🔍 Verifying ${{ matrix.config_name }} binary..."
-        file "$APP_PATH/Contents/MacOS/QuickLauncher"
+        BINARY_INFO=$(file "$APP_PATH/Contents/MacOS/QuickLauncher")
+        echo "📋 Binary: $BINARY_INFO"
+        
+        # Verify the binary architecture matches what we expect
+        if [[ "${{ matrix.architecture }}" == "x86_64" ]]; then
+          if echo "$BINARY_INFO" | grep -q "x86_64"; then
+            echo "✅ Intel x86_64 binary verified"
+          else
+            echo "⚠️ Warning: Expected x86_64 binary but got different architecture"
+          fi
+        elif [[ "${{ matrix.architecture }}" == "arm64" ]]; then
+          if echo "$BINARY_INFO" | grep -q "arm64\|ARM64"; then
+            echo "✅ ARM64 binary verified"
+          else
+            echo "⚠️ Warning: Expected ARM64 binary but got different architecture"
+          fi
+        fi
         
         # Show app structure
         echo "📋 App structure:"
@@ -514,8 +525,16 @@ jobs:
           ls -la "artifacts/intel/QuickLauncher-Intel.app/Contents/"
           echo ""
           echo "Binary verification:"
-          file "artifacts/intel/QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher"
-          echo ""
+          BINARY_INFO=$(file "artifacts/intel/QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher")
+          echo "📋 Binary: $BINARY_INFO"
+          
+          # Verify it's actually Intel binary
+          if echo "$BINARY_INFO" | grep -q "x86_64"; then
+            echo "✅ Intel x86_64 architecture verified"
+          else
+            echo "⚠️ Warning: Expected x86_64 architecture"
+          fi
+          
           echo "Bundle identifier:"
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "artifacts/intel/QuickLauncher-Intel.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
         else
@@ -544,8 +563,16 @@ jobs:
           ls -la "artifacts/arm64/QuickLauncher-ARM64.app/Contents/"
           echo ""
           echo "Binary verification:"
-          file "artifacts/arm64/QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher"
-          echo ""
+          BINARY_INFO=$(file "artifacts/arm64/QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher")
+          echo "📋 Binary: $BINARY_INFO"
+          
+          # Verify it's actually ARM64 binary
+          if echo "$BINARY_INFO" | grep -q "arm64\|ARM64"; then
+            echo "✅ ARM64 architecture verified"
+          else
+            echo "⚠️ Warning: Expected ARM64 architecture"
+          fi
+          
           echo "Bundle identifier:"
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "artifacts/arm64/QuickLauncher-ARM64.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
         else

@@ -63,18 +63,47 @@ jobs:
         # Find and copy the built app
         APP_PATH=$(find DerivedData-${{ matrix.config_name }} -name "QuickLauncher.app" -type d | head -1)
         if [ -z "$APP_PATH" ]; then
-          echo "No app bundle found"
+          echo "❌ No app bundle found"
           exit 1
         fi
         
+        echo "📁 Found app at: $APP_PATH"
         mkdir -p CI-Artifacts
         cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
-        # Fix Framework structure to avoid duplicate content
-        ./scripts/fix-frameworks.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        echo "🔍 Checking Framework structure BEFORE fix:"
+        if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" ]; then
+          find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read fw; do
+            fw_name=$(basename "$fw" .framework)
+            echo "  📦 Framework: $fw_name"
+            if [ -f "$fw/$fw_name" ] && [ ! -L "$fw/$fw_name" ]; then
+              echo "    ❌ $fw_name is a FILE (should be symlink)"
+            elif [ -L "$fw/$fw_name" ]; then
+              echo "    ✅ $fw_name is already a symlink"
+            else
+              echo "    ⚠️ $fw_name not found"
+            fi
+          done
+        fi
         
-        # Clean unused libraries
-        ./scripts/clean-libs.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        echo "🔧 Running Framework fix script..."
+        if [ -f "./scripts/fix-frameworks.sh" ]; then
+          chmod +x ./scripts/fix-frameworks.sh
+          ./scripts/fix-frameworks.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+          echo "✅ Framework fix script completed"
+        else
+          echo "❌ fix-frameworks.sh script not found"
+          exit 1
+        fi
+        
+        echo "🧹 Running library cleanup script..."
+        if [ -f "./scripts/clean-libs.sh" ]; then
+          chmod +x ./scripts/clean-libs.sh
+          ./scripts/clean-libs.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+          echo "✅ Library cleanup completed"
+        else
+          echo "⚠️ clean-libs.sh script not found"
+        fi
         
         # Verify Framework structure
         if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" ]; then

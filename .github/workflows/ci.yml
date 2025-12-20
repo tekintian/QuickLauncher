@@ -104,8 +104,19 @@ jobs:
         
         # Check if Versions/Current is a symlink or directory
         if [ -L "$FRAMEWORKS_DIR/Versions/Current" ]; then
-            echo "  ✅ Versions/Current is already a symlink: $(readlink $FRAMEWORKS_DIR/Versions/Current)"
-            echo "  🔧 Framework structure is correct, no changes needed"
+            CURRENT_TARGET=$(readlink "$FRAMEWORKS_DIR/Versions/Current")
+            echo "  ✅ Versions/Current is symlink: $CURRENT_TARGET"
+            
+            # Verify symlink targets are valid
+            if [ "$CURRENT_TARGET" = "A" ] && [ -d "$FRAMEWORKS_DIR/Versions/A" ]; then
+                echo "  ✅ Symlink structure is correct"
+            else
+                echo "  ❌ Symlink structure broken - fixing..."
+                cd "$FRAMEWORKS_DIR"
+                rm -f Versions/Current
+                ln -sf A Versions/Current
+                cd /Users/runner/work/QuickLauncher/QuickLauncher
+            fi
         elif [ -d "$FRAMEWORKS_DIR/Versions/Current" ]; then
             echo "  ⚠️ Versions/Current is a directory, creating proper symlink structure"
             cd "$FRAMEWORKS_DIR"
@@ -134,6 +145,55 @@ jobs:
         echo "📋 Final Framework structure:"
         ls -la "$FRAMEWORKS_DIR"
         
+        # Detailed symlink verification
+        echo "🔍 Detailed symlink verification:"
+        if [ -L "$FRAMEWORKS_DIR/QuickLauncherCore" ]; then
+            BINARY_TARGET=$(readlink "$FRAMEWORKS_DIR/QuickLauncherCore")
+            if [ -f "$FRAMEWORKS_DIR/$BINARY_TARGET" ]; then
+                echo "  ✅ QuickLauncherCore symlink valid: $BINARY_TARGET"
+            else
+                echo "  ❌ QuickLauncherCore symlink broken: $BINARY_TARGET (target missing)"
+            fi
+        else
+            echo "  ❌ QuickLauncherCore is not a symlink!"
+            if [ -f "$FRAMEWORKS_DIR/QuickLauncherCore" ]; then
+                echo "  🚨 QuickLauncherCore is a real file - symlink was broken!"
+                echo "  🔄 Fixing: removing duplicate file and recreating symlink"
+                cd "$FRAMEWORKS_DIR"
+                rm -f QuickLauncherCore
+                ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
+                cd /Users/runner/work/QuickLauncher/QuickLauncher
+            fi
+        fi
+        
+        if [ -L "$FRAMEWORKS_DIR/Resources" ]; then
+            RESOURCES_TARGET=$(readlink "$FRAMEWORKS_DIR/Resources")
+            if [ -d "$FRAMEWORKS_DIR/$RESOURCES_TARGET" ]; then
+                echo "  ✅ Resources symlink valid: $RESOURCES_TARGET"
+            else
+                echo "  ❌ Resources symlink broken: $RESOURCES_TARGET (target missing)"
+            fi
+        else
+            echo "  ❌ Resources is not a symlink!"
+            if [ -d "$FRAMEWORKS_DIR/Resources" ]; then
+                echo "  🚨 Resources is a real directory - symlink was broken!"
+                echo "  🔄 Fixing: removing duplicate directory and recreating symlink"
+                cd "$FRAMEWORKS_DIR"
+                rm -rf Resources
+                ln -sf Versions/A/Resources Resources
+                cd /Users/runner/work/QuickLauncher/QuickLauncher
+            fi
+        fi
+        
+        # Check for duplicate files in Framework
+        echo "🔍 Checking for duplicate files in Framework:"
+        cd "$FRAMEWORKS_DIR"
+        find . -type f -exec basename {} \; | sort | uniq -d | while read file; do
+            echo "  ⚠️ Duplicate file found: $file"
+            find . -name "$file" -ls
+        done
+        cd /Users/runner/work/QuickLauncher/QuickLauncher
+        
         # Step 3: Package after framework fixes (before library cleanup)
         echo "📦 Creating post-framework-fix package..."
         cd CI-Artifacts
@@ -142,6 +202,16 @@ jobs:
         cd ..
         
         echo "🧹 Running library cleanup script..."
+        
+        # Pre-cleanup size analysis
+        echo "📊 Pre-cleanup analysis:"
+        APP_SIZE_BEFORE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
+        echo "  App size before cleanup: $APP_SIZE_BEFORE"
+        LIBS_SIZE_BEFORE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
+        echo "  Libraries size before cleanup: $LIBS_SIZE_BEFORE"
+        LIBS_COUNT_BEFORE=$(ls -1 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
+        echo "  Libraries count before cleanup: $LIBS_COUNT_BEFORE"
+        
         if [ -f "./scripts/clean-libs.sh" ]; then
           chmod +x ./scripts/clean-libs.sh
           ./scripts/clean-libs.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
@@ -150,13 +220,27 @@ jobs:
           echo "⚠️ clean-libs.sh script not found"
         fi
 
+        # Post-cleanup size analysis
+        echo "📊 Post-cleanup analysis:"
+        APP_SIZE_AFTER=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
+        echo "  App size after cleanup: $APP_SIZE_AFTER"
+        LIBS_SIZE_AFTER=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
+        echo "  Libraries size after cleanup: $LIBS_SIZE_AFTER"
+        LIBS_COUNT_AFTER=$(ls -1 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
+        echo "  Libraries count after cleanup: $LIBS_COUNT_AFTER"
+        
+        # Calculate size difference
+        echo "📊 Size difference analysis:"
+        if [ "$APP_SIZE_BEFORE" != "$APP_SIZE_AFTER" ]; then
+            echo "  ⚠️ App size changed: $APP_SIZE_BEFORE -> $APP_SIZE_AFTER"
+            echo "  🔍 This indicates a potential symlink or filesystem issue"
+        else
+            echo "  ✅ App size unchanged (expected)"
+        fi
+        
         # Basic verification
         [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
-        
-        # Show final app size
-        APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
-        echo "📊 Final app size: $APP_SIZE"
         
         # Step 4: Create final packages
         echo "📦 Creating final packages..."

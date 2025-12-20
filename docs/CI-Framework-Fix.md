@@ -3,9 +3,9 @@
 ## 问题描述
 
 在CI构建过程中发现以下问题：
-1. **大小异常增加**：删除了11个库文件后，app大小从14M增加到17M
-2. **Symlink变成实际文件**：CI中显示为symlink，但下载后变成实际文件
-3. **压缩过程中的symlink丢失**：GitHub Actions的artifact可能破坏symlink结构
+1. **大小异常增加**：删除了11个库文件后，app大小从14M增加到17M（2025-12-20第50次CI仍然存在）
+2. **Symlink损坏**：CI显示symlink正确，但实际可能变成实际文件
+3. **du命令错误计算**：当symlink损坏时，文件大小计算异常
 
 ## 根本原因分析
 
@@ -21,10 +21,10 @@ QuickLauncherCore.framework/
 ```
 
 ### CI脚本的问题
-之前的CI脚本强制删除并重建symlinks：
-- 删除了正确的`Versions/Current/`目录结构
-- 重新创建了`Current -> A`的symlink
-- 导致symlink路径混乱和大小异常
+之前的CI脚本在某个环节破坏了symlinks：
+- 可能在文件复制或处理过程中symlink变成实际文件
+- 导致du命令重复计算文件大小
+- 即使CI显示symlink正确，实际文件系统中的symlink可能已损坏
 
 ## 解决方案
 

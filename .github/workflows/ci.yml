@@ -113,6 +113,7 @@ jobs:
           MARKETING_VERSION=1.0.0 \
           CURRENT_PROJECT_VERSION=1 \
           DEVELOPMENT_LANGUAGE=en \
+          LSUIElement=YES \
           -allowProvisioningUpdates
         
         # 验证构建结果
@@ -228,6 +229,7 @@ jobs:
         fi
         
         # Remove unused Swift libraries to match local build behavior
+        # Keep only the libraries that are actually present in the local build
         echo "🗑️  Removing unused Swift libraries..."
         UNUSED_LIBS=(
             "libswiftCloudKit.dylib"
@@ -238,6 +240,7 @@ jobs:
             "libswiftIOKit.dylib"
             "libswiftQuartzCore.dylib"
         )
+        # Note: libswiftContacts.dylib is NOT removed because it's present in local build
         
         for lib in "${UNUSED_LIBS[@]}"; do
           LIB_PATH="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/$lib"
@@ -247,7 +250,7 @@ jobs:
           fi
         done
         
-        # Fix unparsed build variables in all Info.plist files
+        # Fix unparsed build variables in all Info.plist files with correct bundle identifiers
         echo "🔧 Fixing unparsed build variables in Info.plist files..."
         
         # Define the expected values for build variables
@@ -256,36 +259,126 @@ jobs:
         BUNDLE_SHORT_VERSION_STRING="1.0.0"
         BUNDLE_VERSION="1"
         
-        # Find all Info.plist files in the app bundle and fix variables
+        # Find all Info.plist files in the app bundle and fix variables with correct bundle IDs
         find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" -name "Info.plist" -type f | while read plist_path; do
           echo "  Fixing variables in: $(basename "$(dirname "$(dirname "$plist_path")")")/Info.plist"
           
-          # Fix bundle identifier
+          # Determine correct bundle identifier based on component type
+          bundle_dir=$(dirname "$(dirname "$plist_path")")
+          bundle_name=$(basename "$bundle_dir")
+          correct_bundle_id=""
+          
+          case "$bundle_name" in
+            "QuickLauncher.app")
+              correct_bundle_id="$PRODUCT_BUNDLE_IDENTIFIER"
+              ;;
+            "QuickLauncherFinderExtension.appex")
+              correct_bundle_id="${PRODUCT_BUNDLE_IDENTIFIER}.QuickLauncherFinderExtension"
+              ;;
+            "ShortcutRecorder_ShortcutRecorder.bundle")
+              correct_bundle_id="ShortcutRecorder-ShortcutRecorder-resources"
+              ;;
+            *.framework)
+              if [[ "$bundle_name" == "QuickLauncherCore.framework" ]]; then
+                correct_bundle_id="cn.tekin.app.QuickLauncherCore"
+              else
+                correct_bundle_id="com.ShortcutRecorder.framework"  # Default framework format
+              fi
+              ;;
+            *)
+              # For other bundles, use a safe fallback
+              if [[ "$bundle_name" == *.bundle ]]; then
+                correct_bundle_id="${PRODUCT_BUNDLE_IDENTIFIER}.$(basename "$bundle_name" .bundle)"
+              elif [[ "$bundle_name" == *.appex ]]; then
+                correct_bundle_id="${PRODUCT_BUNDLE_IDENTIFIER}.$(basename "$bundle_name" .appex)"
+              else
+                correct_bundle_id="$PRODUCT_BUNDLE_IDENTIFIER"
+              fi
+              ;;
+          esac
+          
+          # Fix bundle identifier with correct value
           if /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$plist_path" 2>/dev/null | grep -q "\$(PRODUCT_BUNDLE_IDENTIFIER)"; then
-            /usr/libexec/PlistBuddy -c "Set CFBundleIdentifier $PRODUCT_BUNDLE_IDENTIFIER" "$plist_path"
+            /usr/libexec/PlistBuddy -c "Set CFBundleIdentifier $correct_bundle_id" "$plist_path"
+            echo "    Set CFBundleIdentifier to: $correct_bundle_id"
           fi
           
           # Fix executable name
           if /usr/libexec/PlistBuddy -c "Print CFBundleExecutable" "$plist_path" 2>/dev/null | grep -q "\$(PRODUCT_NAME)"; then
             # Use the bundle name as the executable name for non-main app bundles
-            bundle_name=$(basename "$(dirname "$(dirname "$plist_path")")" .bundle)
-            bundle_name=$(basename "$bundle_name" .framework)
-            bundle_name=$(basename "$bundle_name" .appex)
-            /usr/libexec/PlistBuddy -c "Set CFBundleExecutable $bundle_name" "$plist_path"
+            exec_name=$(basename "$bundle_name" .appex)
+            exec_name=$(basename "$exec_name" .bundle)
+            exec_name=$(basename "$exec_name" .framework)
+            if [ "$exec_name" = "QuickLauncher" ]; then
+              exec_name="$PRODUCT_NAME"
+            fi
+            /usr/libexec/PlistBuddy -c "Set CFBundleExecutable $exec_name" "$plist_path"
+            echo "    Set CFBundleExecutable to: $exec_name"
           fi
           
-          # Fix version strings
-          if /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$plist_path" 2>/dev/null | grep -q "\$(BUNDLE_SHORT_VERSION_STRING)"; then
-            /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $BUNDLE_SHORT_VERSION_STRING" "$plist_path"
-          fi
+          # Fix version strings - ensure all components have same version
+          echo "    Setting version numbers..."
+          /usr/libexec/PlistBuddy -c "Set CFBundleShortVersionString $BUNDLE_SHORT_VERSION_STRING" "$plist_path" 2>/dev/null || echo "      Version already set or key doesn't exist"
+          /usr/libexec/PlistBuddy -c "Set CFBundleVersion $BUNDLE_VERSION" "$plist_path" 2>/dev/null || echo "      Build version already set or key doesn't exist"
           
-          if /usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$plist_path" 2>/dev/null | grep -q "\$(BUNDLE_VERSION)"; then
-            /usr/libexec/PlistBuddy -c "Set CFBundleVersion $BUNDLE_VERSION" "$plist_path"
-          fi
+          # Verify version strings were set correctly
+          final_version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$plist_path" 2>/dev/null || echo "N/A")
+          final_build=$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "$plist_path" 2>/dev/null || echo "N/A")
+          echo "      Version: $final_version (Build: $final_build)"
           
           # Fix product name if referenced
           if /usr/libexec/PlistBuddy -c "Print CFBundleName" "$plist_path" 2>/dev/null | grep -q "\$(PRODUCT_NAME)"; then
-            /usr/libexec/PlistBuddy -c "Set CFBundleName $PRODUCT_NAME" "$plist_path"
+            # For non-main bundles, use the bundle name instead of product name
+            if [ "$bundle_name" != "QuickLauncher.app" ]; then
+              display_name=$(basename "$bundle_name" .appex)
+              display_name=$(basename "$display_name" .bundle)
+              display_name=$(basename "$display_name" .framework)
+              /usr/libexec/PlistBuddy -c "Set CFBundleName $display_name" "$plist_path"
+            else
+              /usr/libexec/PlistBuddy -c "Set CFBundleName $PRODUCT_NAME" "$plist_path"
+            fi
+          fi
+          
+          # Clean up inappropriate keys from main app and other components
+          echo "    Cleaning up inappropriate keys..."
+          
+          # Remove NSExtension from main app (should only be in extensions)
+          if [ "$bundle_name" = "QuickLauncher.app" ]; then
+            if /usr/libexec/PlistBuddy -c "Print NSExtension" "$plist_path" 2>/dev/null; then
+              echo "      Removing NSExtension from main app"
+              /usr/libexec/PlistBuddy -c "Delete NSExtension" "$plist_path" 2>/dev/null || echo "      NSExtension already removed"
+            fi
+          fi
+          
+          # Remove LSUIElement from extensions (should only be in main app)
+          if [[ "$bundle_name" == *.appex ]]; then
+            if /usr/libexec/PlistBuddy -c "Print LSUIElement" "$plist_path" 2>/dev/null; then
+              echo "      Removing LSUIElement from extension"
+              /usr/libexec/PlistBuddy -c "Delete LSUIElement" "$plist_path" 2>/dev/null || echo "      LSUIElement already removed"
+            fi
+          fi
+          
+          # Ensure LSUIElement is properly set for main app (string format) and extensions (boolean format)
+          if [ "$bundle_name" = "QuickLauncher.app" ]; then
+            if ! /usr/libexec/PlistBuddy -c "Print LSUIElement" "$plist_path" 2>/dev/null; then
+              echo "      Adding LSUIElement to main app"
+              /usr/libexec/PlistBuddy -c "Add LSUIElement string YES" "$plist_path" 2>/dev/null || echo "      LSUIElement already exists"
+            else
+              # Ensure it's set to YES (string format for main app)
+              echo "      Setting LSUIElement to string YES for main app"
+              /usr/libexec/PlistBuddy -c "Delete LSUIElement" "$plist_path" 2>/dev/null || true
+              /usr/libexec/PlistBuddy -c "Add LSUIElement string YES" "$plist_path" 2>/dev/null || echo "      LSUIElement already set"
+            fi
+          elif [[ "$bundle_name" == *.appex ]]; then
+            if ! /usr/libexec/PlistBuddy -c "Print LSUIElement" "$plist_path" 2>/dev/null; then
+              echo "      Adding LSUIElement to extension"
+              /usr/libexec/PlistBuddy -c "Add LSUIElement bool true" "$plist_path" 2>/dev/null || echo "      LSUIElement already exists"
+            else
+              # Ensure it's set to true (boolean format for extensions)
+              echo "      Setting LSUIElement to boolean true for extension"
+              /usr/libexec/PlistBuddy -c "Delete LSUIElement" "$plist_path" 2>/dev/null || true
+              /usr/libexec/PlistBuddy -c "Add LSUIElement bool true" "$plist_path" 2>/dev/null || echo "      LSUIElement already set"
+            fi
           fi
         done
         
@@ -326,18 +419,65 @@ jobs:
           '</plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
         done
         
-        # Sign frameworks
+        # Fix and sign frameworks
         find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read framework; do
-          echo "  Signing framework: $(basename "$framework")"
+          echo "  Fixing framework: $(basename "$framework")"
+          
+          FRAMEWORK_NAME=$(basename "$framework" .framework)
+          
+          # Create required symbolic links for framework structure
+          echo "    Creating required symbolic links..."
+          
+          # Ensure Versions/A/Resources directory exists (match local structure)
+          if [ -d "$framework/Versions/A" ] && [ ! -d "$framework/Versions/A/Resources" ]; then
+            if [ -d "$framework/Resources" ]; then
+              echo "      Moving Resources to Versions/A/Resources"
+              mv "$framework/Resources" "$framework/Versions/A/Resources"
+            fi
+          fi
+          
+          # Create Current -> A symlink if missing
+          if [ ! -L "$framework/Versions/Current" ]; then
+            if [ -d "$framework/Versions/A" ]; then
+              cd "$framework/Versions"
+              ln -sf A Current
+              echo "      Created Current -> A symlink"
+              cd - >/dev/null
+            else
+              echo "      Warning: Versions/A directory not found"
+            fi
+          else
+            echo "      Current symlink already exists"
+          fi
+          
+          # Create top-level symlinks if missing
+          if [ ! -L "$framework/$FRAMEWORK_NAME" ]; then
+            cd "$framework"
+            ln -sf Versions/Current/$FRAMEWORK_NAME $FRAMEWORK_NAME
+            echo "      Created $FRAMEWORK_NAME -> Versions/Current/$FRAMEWORK_NAME symlink"
+            cd - >/dev/null
+          else
+            echo "      $FRAMEWORK_NAME symlink already exists"
+          fi
+          
+          if [ ! -L "$framework/Resources" ]; then
+            cd "$framework"
+            ln -sf Versions/Current/Resources Resources
+            echo "      Created Resources -> Versions/Current/Resources symlink"
+            cd - >/dev/null
+          else
+            echo "      Resources symlink already exists"
+          fi
           
           # Fix framework library ID for proper dylib loading
-          FRAMEWORK_NAME=$(basename "$framework" .framework)
-          FRAMEWORK_BINARY="$framework/$FRAMEWORK_NAME"
+          FRAMEWORK_BINARY="$framework/Versions/A/$FRAMEWORK_NAME"
           if [ -f "$FRAMEWORK_BINARY" ]; then
             echo "    Fixing framework library ID for $FRAMEWORK_NAME"
             install_name_tool -id "@rpath/$FRAMEWORK_NAME.framework/Versions/A/$FRAMEWORK_NAME" "$FRAMEWORK_BINARY" 2>/dev/null || echo "    Library ID already correct"
           fi
           
+          # Sign the framework
+          echo "  Signing framework: $(basename "$framework")"
           codesign --force --sign "-" --options runtime "$framework" || echo "  ⚠️ Framework signing failed"
         done
         
@@ -364,6 +504,51 @@ jobs:
           ls -la "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/PlugIns/QuickLauncherFinderExtension.appex/Contents/"
         else
           echo "⚠️ Finder Extension not found in final app"
+        fi
+        
+        # Verify Framework structure matches local build
+        if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework" ]; then
+          echo "🔍 Verifying Framework structure..."
+          FRAMEWORK_DIR="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework"
+          
+          # Check symbolic links
+          if [ -L "$FRAMEWORK_DIR/Versions/Current" ]; then
+            echo "✅ Versions/Current symlink exists"
+            CURRENT_LINK_TARGET=$(readlink "$FRAMEWORK_DIR/Versions/Current")
+            echo "📋 Current -> $CURRENT_LINK_TARGET"
+          else
+            echo "❌ Versions/Current symlink missing"
+          fi
+          
+          if [ -L "$FRAMEWORK_DIR/QuickLauncherCore" ]; then
+            echo "✅ QuickLauncherCore symlink exists"
+            BINARY_LINK_TARGET=$(readlink "$FRAMEWORK_DIR/QuickLauncherCore")
+            echo "📋 QuickLauncherCore -> $BINARY_LINK_TARGET"
+          else
+            echo "❌ QuickLauncherCore symlink missing"
+          fi
+          
+          if [ -L "$FRAMEWORK_DIR/Resources" ]; then
+            echo "✅ Resources symlink exists"
+            RESOURCES_LINK_TARGET=$(readlink "$FRAMEWORK_DIR/Resources")
+            echo "📋 Resources -> $RESOURCES_LINK_TARGET"
+          else
+            echo "❌ Resources symlink missing"
+          fi
+          
+          # Check Versions/A structure
+          if [ -d "$FRAMEWORK_DIR/Versions/A" ]; then
+            echo "✅ Versions/A directory exists"
+            if [ -f "$FRAMEWORK_DIR/Versions/A/QuickLauncherCore" ]; then
+              echo "✅ Framework binary exists in Versions/A"
+            else
+              echo "❌ Framework binary missing in Versions/A"
+            fi
+          else
+            echo "❌ Versions/A directory missing"
+          fi
+        else
+          echo "❌ QuickLauncherCore framework not found"
         fi
         
         # Test basic app functionality (comprehensive validation)
@@ -394,7 +579,15 @@ jobs:
           echo "✅ Resources directory exists"
           ASSETS_COUNT=$(find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources" -name "*.xcassets" | wc -l)
           LOCALIZATION_COUNT=$(find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources" -name "*.lproj" | wc -l)
-          echo "📋 Assets: $ASSETS_COUNT, Localization: $LOCALIZATION_COUNT"
+          BUNDLE_COUNT=$(find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources" -name "*.bundle" | wc -l)
+          echo "📋 Assets: $ASSETS_COUNT, Localization: $LOCALIZATION_COUNT, Bundles: $BUNDLE_COUNT"
+          
+          # Check for ShortcutRecorder bundle in Resources (should be here)
+          if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/ShortcutRecorder_ShortcutRecorder.bundle" ]; then
+            echo "✅ ShortcutRecorder bundle found in Resources"
+          else
+            echo "⚠️ ShortcutRecorder bundle not found in Resources"
+          fi
         else
           echo "⚠️ Resources directory missing (may be optional)"
         fi

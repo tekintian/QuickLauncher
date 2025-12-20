@@ -5,7 +5,7 @@
 # Generates detailed release notes highlighting features, improvements, and installation instructions.
 # author: tekintian@gmail.com   https://dev.tekin.cn
 # date: 2025-12-20
-# version: 1.0.0
+# version: 2.0.0
 # license: MIT
 name: Release
 
@@ -19,449 +19,143 @@ permissions:
   contents: write
 
 jobs:
-  create-release:
+  build:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - config_name: Intel
+            architecture: x86_64
+            deployment_target: "10.13"
+          - config_name: ARM64
+            architecture: arm64
+            deployment_target: "11.0"
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup CI Environment
+      run: |
+        chmod +x scripts/ci-setup.sh
+        ./scripts/ci-setup.sh
+
+    - name: Install Dependencies
+      run: |
+        set -euo pipefail
+        echo "📦 Installing dependencies..."
+        # Install tools needed for release packaging
+        if ! command -v xz &> /dev/null; then
+          echo "🍺 Installing xz..."
+          brew install xz
+        else
+          echo "✅ xz is already installed"
+        fi
+
+    - name: Build App
+      run: |
+        # Use proper destination that includes architecture
+        if [[ "${{ matrix.architecture }}" == "x86_64" ]]; then
+          DESTINATION="platform=macOS,arch=x86_64"
+        else
+          DESTINATION="platform=macOS,arch=arm64"
+        fi
+        
+        xcodebuild clean build \
+          -project QuickLauncher.xcodeproj \
+          -scheme QuickLauncher \
+          -configuration Release \
+          -derivedDataPath DerivedData-${{ matrix.config_name }} \
+          -destination "$DESTINATION" \
+          MACOSX_DEPLOYMENT_TARGET="${{ matrix.deployment_target }}" \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO
+
+    - name: Create Artifacts
+      run: |
+        # Find and work directly with the built app (no copy to avoid du calculation issues)
+        APP_PATH=$(find DerivedData-${{ matrix.config_name }} -name "QuickLauncher.app" -type d | head -1)
+        if [ -z "$APP_PATH" ]; then
+          echo "❌ No app bundle found"
+          exit 1
+        fi
+        
+        echo "find app bundle at: $APP_PATH"
+
+        # Step 3: Prepare CI-Artifacts directory
+        rm -rf CI-Artifacts
+        mkdir -p CI-Artifacts
+
+        echo "🧹 Running library cleanup script..."
+   
+        if [ -f "./scripts/clean-libs.sh" ]; then
+          chmod +x ./scripts/clean-libs.sh
+          ./scripts/clean-libs.sh "$APP_PATH"
+          echo "✅ Library cleanup completed"
+        else
+          echo "⚠️ clean-libs.sh script not found"
+        fi
+        
+        # Basic verification
+        [ -f "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
+        [ -x "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
+        
+        # Step 4: Move app to release directory with architecture name
+        mkdir -p Release/${{ matrix.config_name }}
+        echo " moving $APP_PATH to Release/${{ matrix.config_name }}/QuickLauncher.app "
+        mv $APP_PATH Release/${{ matrix.config_name }}/QuickLauncher.app
+        
+        # Verify deployment target in Info.plist
+        INFO_PLIST="Release/${{ matrix.config_name }}/QuickLauncher.app/Contents/Info.plist"
+        if [ -f "$INFO_PLIST" ]; then
+          echo "✅ ${{ matrix.config_name }} Info.plist exists, updating deployment target..."
+          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${{ matrix.deployment_target }}" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
+        fi
+        
+        echo "✅ ${{ matrix.config_name }} build completed"
+
+  package-release:
+    needs: build
     runs-on: macos-14
     
     steps:
     - name: Checkout
       uses: actions/checkout@v4
       
-    - name: Setup Xcode
-      uses: maxim-lobanov/setup-xcode@v1
+    - name: Download All Artifacts
+      uses: actions/download-artifact@v4
       with:
-        xcode-version: latest-stable
+        path: artifacts
+        merge-multiple: true
         
-    - name: Update Package Dependencies for CI
+    - name: Extract Build Artifacts
       run: |
-        echo "📦 Updating Xcode project to use remote dependencies for CI..."
+        mkdir -p Release/Intel Release/ARM64
         
-        # Backup original project file
-        cp QuickLauncher.xcodeproj/project.pbxproj QuickLauncher.xcodeproj/project-local.pbxproj
-        
-        # Update Xcode project to use remote ShortcutRecorder
-        sed 's|repositoryURL = "file://./LocalDependencies/ShortcutRecorder";|repositoryURL = "https://github.com/tekintian/ShortcutRecorder.git";|g' QuickLauncher.xcodeproj/project.pbxproj > temp.pbxproj && mv temp.pbxproj QuickLauncher.xcodeproj/project.pbxproj
-        
-        # Also update Package.swift for consistency
-        cat > Package-ci.swift << 'EOF'
-        // swift-tools-version:5.3
-        // Package definition for QuickLauncher with remote dependencies (CI only)
-        
-        import PackageDescription
-        
-        let package = Package(
-            name: "QuickLauncher",
-            platforms: [
-                .macOS(.v10_13)
-            ],
-            dependencies: [
-                // Use remote ShortcutRecorder dependency for CI builds
-                .package(url: "https://github.com/tekintian/ShortcutRecorder.git", from: "3.4.0")
-            ],
-            targets: [
-                // 这里定义项目的主要目标
-                // 注意：这主要是为了包解析，实际构建使用Xcode项目
-            ]
-        )
-        EOF
-        
-        # Backup original Package.swift and use CI version
-        cp Package.swift Package-local.swift
-        cp Package-ci.swift Package.swift
-        
-        echo "✅ Dependencies updated for CI build"
-        
-    - name: Cache Swift Package Manager
-      uses: actions/cache@v4
-      with:
-        path: |
-          .build
-          ~/Library/Developer/Xcode/DerivedData
-        key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', '*.xcodeproj/**') }}
-        restore-keys: |
-          ${{ runner.os }}-spm-
-          
-    - name: Build Release
-      run: |
-        # Set minimum macOS version for compatibility
-        export MACOSX_DEPLOYMENT_TARGET=10.13
-        
-        # Clean previous builds
-        rm -rf build
-        rm -rf DerivedData*
-        
-        # Build Intel version for macOS 10.13 compatibility using project
-        echo "🏗️ Building Intel (x86_64) version..."
-        xcodebuild -project QuickLauncher.xcodeproj \
-          -scheme QuickLauncher \
-          -configuration Release \
-          -arch x86_64 \
-          -derivedDataPath DerivedData-Intel \
-          MACOSX_DEPLOYMENT_TARGET=10.13 \
-          ONLY_ACTIVE_ARCH=NO \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          ENABLE_BITCODE=NO \
-          SWIFT_OPTIMIZATION_LEVEL=-O \
-          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.app.QuickLauncher \
-          MARKETING_VERSION=1.0.0 \
-          CURRENT_PROJECT_VERSION=1 \
-          DEVELOPMENT_LANGUAGE=en \
-          -allowProvisioningUpdates \
-          clean build
-        
-        # NOTE: Xcode build already includes all compiled resources
-        # No manual resource copying needed - would corrupt the built app
-        
-        # Verify Intel build succeeded
-        echo "🔍 Checking Intel build results..."
-        if [ ! -d "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" ]; then
-          echo "❌ Intel build failed - no app bundle found"
-          find DerivedData-Intel -name "*.app" -type d || echo "No app bundles found"
-          exit 1
-        fi
-        echo "📋 Intel app structure verification:"
-        ls -la "DerivedData-Intel/Build/Products/Release/QuickLauncher.app/Contents/"
-        
-        # Copy Intel binary
-        echo "🔍 Verifying Intel build output..."
-        ls -la "DerivedData-Intel/Build/Products/Release/"
-        if [ -d "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" ]; then
-          echo "✅ Intel build successful, copying app..."
-          # Remove existing copy and copy fresh from build output
-          rm -rf QuickLauncher-Intel.app
-          cp -R "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
-          
-          # Ensure complete directory structure
-          echo "🔧 Ensuring complete Intel app structure..."
-          mkdir -p "QuickLauncher-Intel.app/Contents/{MacOS,Resources,Frameworks,PlugIns}"
-          
-          # Verify executable exists and is executable
-          if [ -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ]; then
-            chmod +x "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher"
-            echo "✅ Intel executable verified and permissions set"
-          else
-            echo "❌ Intel executable missing"
-            exit 1
-          fi
-          
-          echo "📋 Intel app structure:"
-          find QuickLauncher-Intel.app -name "*.plist" -o -name "QuickLauncher" | head -10
-          
-          # Verify binary architecture
-          echo "🔍 Intel binary verification:"
-          file "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" || echo "⚠️ Could not verify binary"
-          
-          # Test Info.plist if exists
-          if [ -f "QuickLauncher-Intel.app/Contents/Info.plist" ]; then
-            echo "✅ Intel Info.plist exists"
-            /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "QuickLauncher-Intel.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
-          else
-            echo "⚠️ Intel Info.plist missing - will be created in packaging step"
-          fi
-        else
-          echo "❌ Intel build failed - no app found"
-          exit 1
+        # Extract Intel build if exists
+        if [ -d "artifacts/Intel" ]; then
+          cp -R artifacts/Intel/* Release/Intel/
         fi
         
-        # Build ARM64 version for macOS 11.0 compatibility
-        echo "🏗️ Building Apple Silicon (ARM64) version..."
-        xcodebuild -project QuickLauncher.xcodeproj \
-          -scheme QuickLauncher \
-          -configuration Release \
-          -arch arm64 \
-          -derivedDataPath DerivedData-ARM64 \
-          MACOSX_DEPLOYMENT_TARGET=11.0 \
-          ONLY_ACTIVE_ARCH=NO \
-          CODE_SIGN_IDENTITY="" \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGNING_ALLOWED=NO \
-          ENABLE_BITCODE=NO \
-          SWIFT_OPTIMIZATION_LEVEL=-O \
-          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.app.QuickLauncher \
-          MARKETING_VERSION=1.0.0 \
-          CURRENT_PROJECT_VERSION=1 \
-          DEVELOPMENT_LANGUAGE=en \
-          -allowProvisioningUpdates \
-          clean build
-        
-        # Ensure Resources are properly linked after build
-        echo "🔗 Ensuring proper resource linking for ARM64 build..."
-        # NOTE: Xcode build already includes all compiled resources
-        # No manual resource copying needed - would corrupt the built app
-        
-        # Verify ARM64 build succeeded
-        echo "🔍 Checking ARM64 build results..."
-        if [ ! -d "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" ]; then
-          echo "❌ ARM64 build failed - no app bundle found"
-          find DerivedData-ARM64 -name "*.app" -type d || echo "No app bundles found"
-          exit 1
-        fi
-        echo "📋 ARM64 app structure verification:"
-        ls -la "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app/Contents/"
-        
-        # Copy ARM64 binary
-        echo "🔍 Verifying ARM64 build output..."
-        ls -la "DerivedData-ARM64/Build/Products/Release/"
-        if [ -d "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" ]; then
-          echo "✅ ARM64 build successful, copying app..."
-          # Remove existing copy and copy fresh from build output
-          rm -rf QuickLauncher-ARM64.app
-          cp -R "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
-          
-          # Ensure complete directory structure
-          echo "🔧 Ensuring complete ARM64 app structure..."
-          mkdir -p "QuickLauncher-ARM64.app/Contents/{MacOS,Resources,Frameworks,PlugIns}"
-          
-          # Verify executable exists and is executable
-          if [ -f "QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher" ]; then
-            chmod +x "QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher"
-            echo "✅ ARM64 executable verified and permissions set"
-          else
-            echo "❌ ARM64 executable missing"
-            exit 1
-          fi
-          
-          echo "📋 ARM64 app structure:"
-          find QuickLauncher-ARM64.app -name "*.plist" -o -name "QuickLauncher" | head -10
-          
-          # Verify binary architecture
-          echo "🔍 ARM64 binary verification:"
-          file "QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher" || echo "⚠️ Could not verify binary"
-          
-          # Test Info.plist if exists
-          if [ -f "QuickLauncher-ARM64.app/Contents/Info.plist" ]; then
-            echo "✅ ARM64 Info.plist exists"
-            /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "QuickLauncher-ARM64.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
-          else
-            echo "⚠️ ARM64 Info.plist missing - will be created in packaging step"
-          fi
-        else
-          echo "❌ ARM64 build failed - no app found"
-          exit 1
+        # Extract ARM64 build if exists  
+        if [ -d "artifacts/ARM64" ]; then
+          cp -R artifacts/ARM64/* Release/ARM64/
         fi
         
-        # Verify binary compatibility
-        echo "🔍 Checking Intel binary compatibility:"
-        file QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher
-        
-        echo "🔍 Checking ARM64 binary compatibility:"
-        file QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher
-        
-        # List available binaries
-        echo "📋 Available binaries:"
-        ls -la QuickLauncher-*.app
-        
-        # Comprehensive build verification
-        echo ""
-        echo "🔍 Final Comprehensive Build Verification:"
-        
+        # Verify both architectures were built
+        echo "📋 Verifying build artifacts:"
         for arch in Intel ARM64; do
-          APP_NAME="QuickLauncher-$arch.app"
-          echo ""
-          echo "📋 $arch App Verification:"
-          
-          if [ -d "$APP_NAME" ]; then
-            # Check executable
-            if [ -f "$APP_NAME/Contents/MacOS/QuickLauncher" ]; then
-              echo "  ✅ Executable: $(file "$APP_NAME/Contents/MacOS/QuickLauncher" | cut -d: -f2-)"
-            else
-              echo "  ❌ Missing executable"
-            fi
-            
-            # Check Info.plist
-            if [ -f "$APP_NAME/Contents/Info.plist" ]; then
-              echo "  ✅ Info.plist exists"
-              BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP_NAME/Contents/Info.plist" 2>/dev/null || echo "N/A")
-              echo "    - Bundle ID: $BUNDLE_ID"
-            else
-              echo "  ❌ Info.plist missing"
-            fi
-            
-            # Check Resources directory
-            if [ -d "$APP_NAME/Contents/Resources" ]; then
-              RESOURCE_COUNT=$(find "$APP_NAME/Contents/Resources" -type f | wc -l | tr -d ' ')
-              echo "  ✅ Resources directory ($RESOURCE_COUNT files)"
-              
-              # Check for key resources
-              [ -f "$APP_NAME/Contents/Resources/Assets.car" ] && echo "    ✅ Assets.car"
-              [ -d "$APP_NAME/Contents/Resources/Assets.xcassets" ] && echo "    ✅ Assets.xcassets"
-              [ -d "$APP_NAME/Contents/Resources/en.lproj" ] && echo "    ✅ en.lproj"
-              [ -f "$APP_NAME/Contents/Resources/MainMenu.nib" ] && echo "    ✅ MainMenu.nib"
-            else
-              echo "  ❌ Resources directory missing"
-            fi
-            
-            # Check Frameworks
-            if [ -d "$APP_NAME/Contents/Frameworks" ]; then
-              FRAMEWORK_COUNT=$(find "$APP_NAME/Contents/Frameworks" -name "*.dylib" | wc -l | tr -d ' ')
-              echo "  ✅ Frameworks directory ($FRAMEWORK_COUNT dylib files)"
-              
-              # Check for Swift libraries
-              [ -f "$APP_NAME/Contents/Frameworks/libswiftFoundation.dylib" ] && echo "    ✅ Swift Foundation"
-              [ -f "$APP_NAME/Contents/Frameworks/libswiftAppKit.dylib" ] && echo "    ✅ Swift AppKit"
-              [ -d "$APP_NAME/Contents/Frameworks/QuickLauncherCore.framework" ] && echo "    ✅ QuickLauncherCore"
-            else
-              echo "  ❌ Frameworks directory missing"
-            fi
-            
-            # Check PlugIns
-            if [ -d "$APP_NAME/Contents/PlugIns" ]; then
-              echo "  ✅ PlugIns directory"
-              [ -d "$APP_NAME/Contents/PlugIns/QuickLauncherFinderExtension.appex" ] && echo "    ✅ Finder Extension"
-            else
-              echo "  ⚠️ PlugIns directory (optional for basic functionality)"
-            fi
-            
-            echo "  📊 App bundle size: $(du -sh "$APP_NAME" | cut -f1)"
+          if [ -d "Release/$arch/QuickLauncher.app" ]; then
+            echo "✅ $arch app: $(du -sh Release/$arch/QuickLauncher.app | cut -f1)"
+            [ -f "Release/$arch/QuickLauncher.app/Contents/MacOS/QuickLauncher" ] && echo "  ✅ Executable exists" || echo "  ❌ Executable missing"
+            [ -d "Release/$arch/QuickLauncher.app/Contents/Frameworks" ] && echo "  ✅ Frameworks exists" || echo "  ❌ Frameworks missing"
+            [ -d "Release/$arch/QuickLauncher.app/Contents/Resources" ] && echo "  ✅ Resources exists" || echo "  ❌ Resources missing"
           else
-            echo "  ❌ App bundle not found"
-          fi
-        done
-        
-        echo ""
-        echo "🎉 Build Summary:"
-        echo "📊 Architecture builds completed:"
-        echo "  - Intel (x86_64): ✅"
-        if [ -d "QuickLauncher-Intel.app" ]; then
-          echo "    - App bundle: $(du -sh QuickLauncher-Intel.app | cut -f1)"
-          echo "    - Binary: $(file QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher | cut -d: -f2-)"
-        fi
-        echo "  - ARM64 (Apple Silicon): ✅"
-        if [ -d "QuickLauncher-ARM64.app" ]; then
-          echo "    - App bundle: $(du -sh QuickLauncher-ARM64.app | cut -f1)"
-          echo "    - Binary: $(file QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher | cut -d: -f2-)"
-        fi
-        echo "  - Dependencies resolved: ✅"
-        echo "  - Ready for packaging: ✅"
-        echo ""
-
-        # Restore original files
-        if [ -f "Package-local.swift" ]; then
-          echo "🔄 Restoring original Package.swift..."
-          cp Package-local.swift Package.swift
-        fi
-        
-        if [ -f "QuickLauncher.xcodeproj/project-local.pbxproj" ]; then
-          echo "🔄 Restoring original Xcode project..."
-          cp QuickLauncher.xcodeproj/project-local.pbxproj QuickLauncher.xcodeproj/project.pbxproj
-        fi
-      
-    - name: Package Applications
-      run: |
-        # Create Intel version
-        echo "📦 Packaging Intel version..."
-        mkdir -p Release/Intel
-        
-        # Verify the complete app structure before packaging
-        echo "🔍 Verifying Intel app structure before packaging..."
-        
-        # Check critical components
-        MISSING_COMPONENTS=""
-        if [ ! -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ]; then
-          MISSING_COMPONENTS="$MISSING_COMPONENTS MacOS/QuickLauncher"
-        fi
-        if [ ! -d "QuickLauncher-Intel.app/Contents/Frameworks" ]; then
-          MISSING_COMPONENTS="$MISSING_COMPONENTS Frameworks"
-        fi
-        if [ ! -d "QuickLauncher-Intel.app/Contents/Resources" ]; then
-          MISSING_COMPONENTS="$MISSING_COMPONENTS Resources"
-        fi
-        
-        if [ -n "$MISSING_COMPONENTS" ]; then
-          echo "❌ Intel app missing critical components: $MISSING_COMPONENTS"
-          echo "🔄 Re-copying complete Intel app from build output..."
-          rm -rf QuickLauncher-Intel.app
-          cp -R DerivedData-Intel/Build/Products/Release/QuickLauncher.app QuickLauncher-Intel.app
-          
-          # Verify again after re-copy
-          if [ ! -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ]; then
-            echo "❌ CRITICAL: Intel executable still missing after re-copy!"
-            echo "Build output contents:"
-            ls -la DerivedData-Intel/Build/Products/Release/QuickLauncher.app/Contents/ 2>/dev/null || echo "No Contents directory found"
-            exit 1
-          fi
-        fi
-        
-        # Final verification of complete structure
-        echo "✅ Intel app final structure verification:"
-        echo "  - Executable: $([ -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ] && echo "✅" || echo "❌")"
-        echo "  - Frameworks: $([ -d "QuickLauncher-Intel.app/Contents/Frameworks" ] && echo "✅" || echo "❌")"
-        echo "  - Resources: $([ -d "QuickLauncher-Intel.app/Contents/Resources" ] && echo "✅" || echo "❌")"
-        echo "  - PlugIns: $([ -d "QuickLauncher-Intel.app/Contents/PlugIns" ] && echo "✅" || echo "⚠️")"
-        
-        # Ensure the app has correct permissions and structure
-        chmod -R 755 QuickLauncher-Intel.app
-        mv QuickLauncher-Intel.app Release/Intel/
-        
-        # Verify Intel Info.plist exists and has correct settings
-        INFO_PLIST="Release/Intel/QuickLauncher.app/Contents/Info.plist"
-        if [ -f "$INFO_PLIST" ]; then
-          echo "✅ Intel Info.plist exists, updating deployment target..."
-          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.13" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
-        else
-          echo "❌ CRITICAL: Intel Info.plist missing after move!"
-          exit 1
-        fi
-        
-        # Create ARM64 version
-        echo "📦 Packaging ARM64 version..."
-        mkdir -p Release/ARM64
-        
-        # Verify the app structure first
-        echo "🔍 Verifying ARM64 app structure before packaging..."
-        if [ ! -d "QuickLauncher-ARM64.app/Contents" ]; then
-          echo "❌ ARM64 app structure is incomplete. Checking build output..."
-          ls -la QuickLauncher-ARM64.app/
-          find DerivedData-ARM64/Build/Products/Release/ -name "*.app" -type d
-          echo "🔄 Re-copying ARM64 app from build output..."
-          cp -R DerivedData-ARM64/Build/Products/Release/QuickLauncher.app QuickLauncher-ARM64.app
-        fi
-        
-        # Ensure the app has correct permissions and structure
-        chmod -R 755 QuickLauncher-ARM64.app
-        mv QuickLauncher-ARM64.app Release/ARM64/
-        
-        # Verify ARM64 Info.plist exists and has correct settings
-        INFO_PLIST="Release/ARM64/QuickLauncher.app/Contents/Info.plist"
-        if [ -f "$INFO_PLIST" ]; then
-          echo "✅ ARM64 Info.plist exists, updating deployment target..."
-          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
-        else
-          echo "❌ CRITICAL: ARM64 Info.plist missing after move!"
-          exit 1
-        fi
-        
-        # NOTE: Resources are already compiled and included by Xcode build
-        # No need to copy source resources - they would corrupt the built app structure
-        
-        # Comprehensive app structure verification before packaging
-        for arch in Intel ARM64; do
-          echo "🔍 Comprehensive verification of $arch app before packaging:"
-          APP_PATH="Release/$arch/QuickLauncher.app"
-          
-          # Check executable exists and has size
-          if [ -f "$APP_PATH/Contents/MacOS/QuickLauncher" ]; then
-            EXEC_SIZE=$(du -h "$APP_PATH/Contents/MacOS/QuickLauncher" | cut -f1)
-            echo "  ✅ Executable: $EXEC_SIZE"
-          else
-            echo "  ❌ CRITICAL: Executable missing!"
-            exit 1
-          fi
-          
-          # Check total app bundle size
-          APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
-          echo "  📊 Total app size: $APP_SIZE"
-          
-          # Check critical directories
-          [ -d "$APP_PATH/Contents/Frameworks" ] && echo "  ✅ Frameworks directory" || echo "  ❌ Frameworks missing"
-          [ -d "$APP_PATH/Contents/Resources" ] && echo "  ✅ Resources directory" || echo "  ❌ Resources missing"
-          [ -d "$APP_PATH/Contents/PlugIns" ] && echo "  ✅ PlugIns directory" || echo "  ⚠️ PlugIns missing"
-          
-          # Ensure app size is reasonable (> 5MB)
-          APP_SIZE_KB=$(du -sk "$APP_PATH" | cut -f1)
-          if [ "$APP_SIZE_KB" -lt 5000 ]; then
-            echo "  ❌ CRITICAL: App bundle too small ($APP_SIZE_KB KB) - likely corrupted"
+            echo "❌ $arch app not found"
             exit 1
           fi
         done

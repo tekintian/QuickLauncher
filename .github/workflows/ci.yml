@@ -114,35 +114,70 @@ jobs:
         # Verify build succeeded
         echo "🔍 Checking ${{ matrix.config_name }} build results..."
         
-        # Check both Debug and Release configurations
+        # 显示DerivedData目录结构以帮助调试
+        echo "📁 DerivedData目录结构:"
+        ls -la "DerivedData-${{ matrix.config_name }}"/Build/Products/
+        
+        # 优化的app包查找逻辑，支持不同的构建配置目录结构
         BUILD_CONFIG=""
+        APP_PATH=""
+        
+        # 检查标准的Debug和Release目录
         if [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" ]; then
           BUILD_CONFIG="Debug"
+          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app"
         elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Release/QuickLauncher.app" ]; then
           BUILD_CONFIG="Release"
+          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Release/QuickLauncher.app"
         else
-          echo "❌ ${{ matrix.config_name }} build failed - no app bundle found"
-          find "DerivedData-${{ matrix.config_name }}" -name "*.app" -type d || echo "No app bundles found"
-          exit 1
+          # 检查可能的自定义构建配置目录
+          echo "📁 检查自定义构建配置目录:"
+          CUSTOM_CONFIGS=$(ls -la "DerivedData-${{ matrix.config_name }}/Build/Products/" | grep "^d" | awk '{print $9}')
+          
+          for config in $CUSTOM_CONFIGS; do
+            if [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/$config/QuickLauncher.app" ]; then
+              BUILD_CONFIG="$config"
+              APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/$config/QuickLauncher.app"
+              break
+            fi
+          done
+          
+          # 如果仍然找不到，尝试全局搜索
+          if [ -z "$BUILD_CONFIG" ]; then
+            echo "📁 全局搜索app包:"
+            GLOBAL_APP_PATH=$(find "DerivedData-${{ matrix.config_name }}" -name "QuickLauncher.app" -type d | head -1)
+            
+            if [ -n "$GLOBAL_APP_PATH" ]; then
+              APP_PATH="$GLOBAL_APP_PATH"
+              BUILD_CONFIG=$(basename "$(dirname "$APP_PATH")")
+            else
+              echo "❌ ${{ matrix.config_name }} build failed - no app bundle found"
+              echo "📁 详细查找所有app包:"
+              find "DerivedData-${{ matrix.config_name }}" -name "*.app" -type d || echo "No app bundles found"
+              echo "📁 查看Products目录完整内容:"
+              find "DerivedData-${{ matrix.config_name }}/Build/Products" -type f -o -type d
+              exit 1
+            fi
+          fi
         fi
         
-        echo "✅ Found app bundle in $BUILD_CONFIG configuration"
-        ls -la "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app/Contents/"
+        echo "✅ Found app bundle in $BUILD_CONFIG configuration at $APP_PATH"
+        ls -la "$APP_PATH/Contents/"
         
         # Check binary
         echo "🔍 Verifying ${{ matrix.config_name }} binary..."
-        file "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app/Contents/MacOS/QuickLauncher"
+        file "$APP_PATH/Contents/MacOS/QuickLauncher"
         
         # Show app structure
         echo "📋 App structure:"
-        find "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app" -name "*.plist" | head -3
+        find "$APP_PATH" -name "*.plist" | head -3
         
         # Create CI build artifacts
         echo "📦 Creating CI artifacts for ${{ matrix.config_name }}..."
         mkdir -p CI-Artifacts
         
         # Copy the built app
-        cp -R "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
         # Ensure proper permissions
         chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"

@@ -69,15 +69,38 @@ jobs:
         
         echo "📁 Found app at: $APP_PATH"
 
-        echo "🔧 Running Framework fix script..."
-        if [ -f "./scripts/tiny-fw.sh" ]; then
-          chmod +x ./scripts/tiny-fw.sh
-          ./scripts/tiny-fw.sh $APP_PATH"
-          echo "✅ Framework fix script completed"
-        else
-          echo "❌ tiny-fw.sh script not found"
-          exit 1
+        FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks/QuickLauncherCore.framework"
+        echo "🔧 Fixing Framework structure in $FRAMEWORKS_DIR..."
+
+        if [ ! -d "$FRAMEWORKS_DIR" ]; then
+            echo "⚠️ No Frameworks directory found"
+            exit 0
         fi
+
+        cd "$FRAMEWORKS_DIR"
+        echo "  🗑️ Removing top-level duplicate files/directories..."
+        rm -rf Resources
+        rm -rf QuickLauncherCore
+        rm -rf Versions/Current
+        echo "  🔗 Creating symlinks..."
+        ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
+        ln -sf Versions/A/Resources Resources
+        cd Versions
+        ln -sf A Current
+        echo "  ✅ Symlinks created."
+
+        cd $PWD
+        echo "✅ Framework structure fix completed"
+        
+        # echo "🔧 Running Framework fix script..."
+        # if [ -f "./scripts/tiny-fw.sh" ]; then
+        #   chmod +x ./scripts/tiny-fw.sh
+        #   ./scripts/tiny-fw.sh $APP_PATH"
+        #   echo "✅ Framework fix script completed"
+        # else
+        #   echo "❌ tiny-fw.sh script not found"
+        #   exit 1
+        # fi
 
 
         mkdir -p CI-Artifacts

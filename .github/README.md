@@ -2,6 +2,15 @@
 
 本项目使用 GitHub Actions 进行持续集成和自动发布。
 
+## 环境变量
+工作目录: /Users/runner/work/QuickLauncher/QuickLauncher/
+
+构建路径: DerivedData-Intel/Build/Products/Release/QuickLauncher.app (相对路径)
+
+完整路径: /Users/runner/work/QuickLauncher/QuickLauncher/DerivedData-Intel/Build/Products/Release/QuickLauncher.app
+
+
+
 ## 🔄 工作流文件
 
 ### 1. `ci.yml` - 持续集成

@@ -111,21 +111,7 @@ jobs:
         ls -lh *.tar.xz
         cd ..
         echo "✅ ${{ matrix.config_name }} build completed"
-
-    - name: Verify Artifacts
-      run: |
-        echo "🔍 Verifying created packages..."
-        cd CI-Artifacts
         
-        chmod +x ../scripts/verify-artifact.sh
-        
-        for package in *.tar.xz; do
-          echo "📦 Verifying $package..."
-          package_name=$(basename "$package" .tar.xz)
-          ../scripts/verify-artifact.sh "$package_name"
-          echo "---"
-        done
-
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:

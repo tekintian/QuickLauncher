@@ -154,6 +154,17 @@ jobs:
         
         echo "✅ ${{ matrix.config_name }} build and artifact creation completed"
         
+        # Show final artifact structure
+        echo "📦 Final CI artifact structure:"
+        ls -la CI-Artifacts/
+        if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" ]; then
+          echo "App bundle structure:"
+          find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" -name "Contents" -type d | while read contents_dir; do
+            echo "📁 $contents_dir"
+            ls -la "$contents_dir/"
+          done
+        fi
+        
         # Restore original files
         if [ -f "Package-local.swift" ]; then
           echo "🔄 Restoring original Package.swift..."
@@ -169,7 +180,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: QuickLauncher-${{ matrix.config_name }}-CI-${{ github.run_number }}
-        path: CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app
+        path: CI-Artifacts/
         retention-days: 7
         if-no-files-found: error
         
@@ -234,29 +245,57 @@ jobs:
         
         # Check Intel build
         echo "📋 Intel build verification:"
+        echo "Directory listing:"
         ls -la artifacts/intel/
+        echo ""
+        echo "Looking for QuickLauncher-Intel.app..."
+        find artifacts/intel/ -name "*.app" -type d || echo "No .app directories found"
+        echo ""
+        
         if [ -d "artifacts/intel/QuickLauncher-Intel.app" ]; then
           echo "✅ Intel app bundle exists"
+          echo "Contents directory:"
           ls -la "artifacts/intel/QuickLauncher-Intel.app/Contents/"
+          echo ""
+          echo "Binary verification:"
           file "artifacts/intel/QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher"
+          echo ""
+          echo "Bundle identifier:"
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "artifacts/intel/QuickLauncher-Intel.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
         else
           echo "❌ Intel app bundle missing"
+          echo "Available items:"
+          find artifacts/intel/ -type f -o -type d | head -10
           exit 1
         fi
         
         echo ""
+        echo "=========================================="
+        echo ""
         
         # Check ARM64 build
         echo "📋 ARM64 build verification:"
+        echo "Directory listing:"
         ls -la artifacts/arm64/
+        echo ""
+        echo "Looking for QuickLauncher-ARM64.app..."
+        find artifacts/arm64/ -name "*.app" -type d || echo "No .app directories found"
+        echo ""
+        
         if [ -d "artifacts/arm64/QuickLauncher-ARM64.app" ]; then
           echo "✅ ARM64 app bundle exists"
+          echo "Contents directory:"
           ls -la "artifacts/arm64/QuickLauncher-ARM64.app/Contents/"
+          echo ""
+          echo "Binary verification:"
           file "artifacts/arm64/QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher"
+          echo ""
+          echo "Bundle identifier:"
           /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "artifacts/arm64/QuickLauncher-ARM64.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
         else
           echo "❌ ARM64 app bundle missing"
+          echo "Available items:"
+          find artifacts/arm64/ -type f -o -type d | head -10
           exit 1
         fi
         

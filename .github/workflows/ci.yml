@@ -121,7 +121,8 @@ jobs:
         # 优化的app包查找逻辑，支持不同的构建配置目录结构
         BUILD_CONFIG=""
         APP_PATH=""
-        
+        ARCH="${{ matrix.arch }}"
+
         # 检查标准的Debug和Release目录
         if [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" ]; then
           BUILD_CONFIG="Debug"
@@ -129,6 +130,20 @@ jobs:
         elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Release/QuickLauncher.app" ]; then
           BUILD_CONFIG="Release"
           APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Release/QuickLauncher.app"
+        # 检查带架构名称的构建配置目录（例如 Release-x86_64, Release-arm64）
+        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Release-${ARCH}/QuickLauncher.app" ]; then
+          BUILD_CONFIG="Release-${ARCH}"
+          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Release-${ARCH}/QuickLauncher.app"
+        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug-${ARCH}/QuickLauncher.app" ]; then
+          BUILD_CONFIG="Debug-${ARCH}"
+          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/Debug-${ARCH}/QuickLauncher.app"
+        # 检查架构作为子目录的情况（例如 x86_64/Release, arm64/Release）
+        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Release/QuickLauncher.app" ]; then
+          BUILD_CONFIG="${ARCH}/Release"
+          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Release/QuickLauncher.app"
+        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Debug/QuickLauncher.app" ]; then
+          BUILD_CONFIG="${ARCH}/Debug"
+          APP_PATH="DerivedData-${{ matrix.config_name }}/Build/Products/${ARCH}/Debug/QuickLauncher.app"
         else
           # 检查可能的自定义构建配置目录
           echo "📁 检查自定义构建配置目录:"

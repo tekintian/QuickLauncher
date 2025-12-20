@@ -64,7 +64,9 @@ jobs:
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO
         # tar the build output for reference
-        tar -cJf build-output-${{ matrix.config_name }}.tar.xz DerivedData-${{ matrix.config_name }}/Build/Products/Release/
+        echo "📦 Saving build output..."
+        tar -cJf build-output-${{ matrix.config_name }}.tar.xz DerivedData-${{ matrix.config_name }}/Build/Products/
+        echo "📦 Build output saved to build-output-${{ matrix.config_name }}.tar.xz"
 
     - name: Create Artifacts
       run: |

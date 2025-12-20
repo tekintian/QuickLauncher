@@ -1,8 +1,17 @@
+# Description: GitHub Actions workflow to build and release QuickLauncher for macOS
+# Triggers on new version tags (v*), builds Intel and ARM64 versions,
+# creates release assets (DMG, ZIP, SHA256), and publishes to GitHub Releases.
+# Uses self-signed code signing, with optional developer certificate signing.
+# Generates detailed release notes highlighting features, improvements, and installation instructions.
+# author: tekintian@gmail.com   https://dev.tekin.cn
+# date: 2025-12-20
+# version: 1.0.0
+# license: MIT
 name: Release
 
 on:
   push:
-    branches: [ main, master, develop ]
+    # Trigger release workflow on new version tags
     tags:
       - 'v*'
 

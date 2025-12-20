@@ -78,10 +78,9 @@ QuickLauncher 项目采用了分离式的 CI/CD 设计，包含 **CI Workflow** 
 
 **核心目的**: 生产版本发布和用户交付
 
-```yaml
 触发条件:
+```yaml
   push:
-    branches: [ main, master, develop ]  # 保持兼容性
     tags:
       - 'v*'  # 只有推送版本标签时才触发正式发布
 ```

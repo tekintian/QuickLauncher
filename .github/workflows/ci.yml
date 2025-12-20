@@ -1,3 +1,11 @@
+# Description: GitHub Actions workflow to build QuickLauncher for macOS
+# Triggers on push to main, master, or develop branches, and pull requests to these branches.
+# Builds Intel and ARM64 versions, with optional code signing (self-signed or developer certificate).
+# Generates release notes highlighting features, improvements, and installation instructions.
+# author: tekintian@gmail.com   https://dev.tekin.cn
+# date: 2025-12-20
+# version: 1.0.0
+# license: MIT
 name: CI
 
 on:

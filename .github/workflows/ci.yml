@@ -75,10 +75,6 @@ jobs:
           exit 1
         fi
         
-        echo "📁 Found app at: $APP_PATH"
-        APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
-        echo "📊 Built app size: $APP_SIZE"
-        
         rm -rf CI-Artifacts
         mkdir -p CI-Artifacts
         # Save build output tar for reference
@@ -90,11 +86,8 @@ jobs:
         cd CI-Artifacts
         # Create a temporary copy with proper name
         echo "  📋 Copying from: $APP_PATH"
-        mv "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Original.app"
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Original.app"
-        mv "QuickLauncher-${{ matrix.config_name }}-Original.app" "QuickLauncher-${{ matrix.config_name }}.app"
-        APP_PATH="QuickLauncher-${{ matrix.config_name }}.app"
-
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "$APP_PATH"
+      
         echo "🧹 Running library cleanup script..."
    
         if [ -f "./scripts/clean-libs.sh" ]; then

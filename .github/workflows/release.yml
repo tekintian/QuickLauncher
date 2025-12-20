@@ -89,9 +89,9 @@ jobs:
         rm -rf build
         rm -rf DerivedData*
         
-        # Build Intel version for macOS 10.15 compatibility using workspace
+        # Build Intel version for macOS 10.15 compatibility using project
         echo "🏗️ Building Intel (x86_64) version..."
-        xcodebuild -workspace QuickLauncher.xcworkspace \
+        xcodebuild -project QuickLauncher.xcodeproj \
           -scheme QuickLauncher \
           -configuration Release \
           -arch x86_64 \
@@ -166,7 +166,7 @@ jobs:
         
         # Build ARM64 version for macOS 11.0 compatibility
         echo "🏗️ Building Apple Silicon (ARM64) version..."
-        xcodebuild -workspace QuickLauncher.xcworkspace \
+        xcodebuild -project QuickLauncher.xcodeproj \
           -scheme QuickLauncher \
           -configuration Release \
           -arch arm64 \

@@ -138,29 +138,8 @@ jobs:
         # Ensure proper permissions
         chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
-        # Copy Resources and localization files
-        echo "🌍 Copying resources and localization files..."
-        
-        # Copy Assets if they exist
-        if [ -d "QuickLauncher/Assets.xcassets" ]; then
-          mkdir -p "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
-          cp -r QuickLauncher/Assets.xcassets "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
-          echo "✅ Assets copied"
-        fi
-        
-        # Copy localization files
-        if [ -d "QuickLauncher/de.lproj" ] || [ -d "QuickLauncher/en.lproj" ]; then
-          mkdir -p "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
-          cp -r QuickLauncher/*.lproj "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/" 2>/dev/null || true
-          echo "✅ Localization files copied"
-        fi
-        
-        # Copy MainMenu.xib if needed
-        if [ -f "QuickLauncher/MainMenu.xib" ]; then
-          mkdir -p "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
-          cp QuickLauncher/MainMenu.xib "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
-          echo "✅ MainMenu.xib copied"
-        fi
+        # NOTE: Resources are already compiled and included by Xcode build
+        # No need to copy source resources - they would corrupt the built app structure
         
         # Apply ad-hoc signature for macOS compatibility
         echo "🔐 Applying ad-hoc signature..."

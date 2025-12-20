@@ -110,6 +110,32 @@ jobs:
           -allowProvisioningUpdates \
           clean build
         
+        # Ensure Resources are properly linked after build
+        echo "🔗 Ensuring proper resource linking for Intel build..."
+        INTEL_APP_DIR="DerivedData-Intel/Build/Products/Release/QuickLauncher.app"
+        if [ -d "$INTEL_APP_DIR" ]; then
+          # Copy Assets.xcassets
+          if [ -d "QuickLauncher/Assets.xcassets" ]; then
+            mkdir -p "$INTEL_APP_DIR/Contents/Resources/"
+            cp -r QuickLauncher/Assets.xcassets "$INTEL_APP_DIR/Contents/Resources/"
+            echo "✅ Intel Assets.xcassets copied"
+          fi
+          
+          # Copy localization files
+          if [ -d "QuickLauncher" ]; then
+            mkdir -p "$INTEL_APP_DIR/Contents/Resources/"
+            cp -r QuickLauncher/*.lproj "$INTEL_APP_DIR/Contents/Resources/" 2>/dev/null || true
+            echo "✅ Intel localization files copied"
+          fi
+          
+          # Copy MainMenu.xib
+          if [ -f "QuickLauncher/MainMenu.xib" ]; then
+            mkdir -p "$INTEL_APP_DIR/Contents/Resources/"
+            cp QuickLauncher/MainMenu.xib "$INTEL_APP_DIR/Contents/Resources/"
+            echo "✅ Intel MainMenu.xib copied"
+          fi
+        fi
+        
         # Verify Intel build succeeded
         echo "🔍 Checking Intel build results..."
         if [ ! -d "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" ]; then
@@ -125,7 +151,23 @@ jobs:
         ls -la "DerivedData-Intel/Build/Products/Release/"
         if [ -d "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" ]; then
           echo "✅ Intel build successful, copying app..."
+          # Remove existing copy and copy fresh from build output
+          rm -rf QuickLauncher-Intel.app
           cp -r "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
+          
+          # Ensure complete directory structure
+          echo "🔧 Ensuring complete Intel app structure..."
+          mkdir -p "QuickLauncher-Intel.app/Contents/{MacOS,Resources,Frameworks,PlugIns}"
+          
+          # Verify executable exists and is executable
+          if [ -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ]; then
+            chmod +x "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher"
+            echo "✅ Intel executable verified and permissions set"
+          else
+            echo "❌ Intel executable missing"
+            exit 1
+          fi
+          
           echo "📋 Intel app structure:"
           find QuickLauncher-Intel.app -name "*.plist" -o -name "QuickLauncher" | head -10
           
@@ -166,6 +208,32 @@ jobs:
           -allowProvisioningUpdates \
           clean build
         
+        # Ensure Resources are properly linked after build
+        echo "🔗 Ensuring proper resource linking for ARM64 build..."
+        ARM64_APP_DIR="DerivedData-ARM64/Build/Products/Release/QuickLauncher.app"
+        if [ -d "$ARM64_APP_DIR" ]; then
+          # Copy Assets.xcassets
+          if [ -d "QuickLauncher/Assets.xcassets" ]; then
+            mkdir -p "$ARM64_APP_DIR/Contents/Resources/"
+            cp -r QuickLauncher/Assets.xcassets "$ARM64_APP_DIR/Contents/Resources/"
+            echo "✅ ARM64 Assets.xcassets copied"
+          fi
+          
+          # Copy localization files
+          if [ -d "QuickLauncher" ]; then
+            mkdir -p "$ARM64_APP_DIR/Contents/Resources/"
+            cp -r QuickLauncher/*.lproj "$ARM64_APP_DIR/Contents/Resources/" 2>/dev/null || true
+            echo "✅ ARM64 localization files copied"
+          fi
+          
+          # Copy MainMenu.xib
+          if [ -f "QuickLauncher/MainMenu.xib" ]; then
+            mkdir -p "$ARM64_APP_DIR/Contents/Resources/"
+            cp QuickLauncher/MainMenu.xib "$ARM64_APP_DIR/Contents/Resources/"
+            echo "✅ ARM64 MainMenu.xib copied"
+          fi
+        fi
+        
         # Verify ARM64 build succeeded
         echo "🔍 Checking ARM64 build results..."
         if [ ! -d "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" ]; then
@@ -181,7 +249,23 @@ jobs:
         ls -la "DerivedData-ARM64/Build/Products/Release/"
         if [ -d "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" ]; then
           echo "✅ ARM64 build successful, copying app..."
+          # Remove existing copy and copy fresh from build output
+          rm -rf QuickLauncher-ARM64.app
           cp -r "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
+          
+          # Ensure complete directory structure
+          echo "🔧 Ensuring complete ARM64 app structure..."
+          mkdir -p "QuickLauncher-ARM64.app/Contents/{MacOS,Resources,Frameworks,PlugIns}"
+          
+          # Verify executable exists and is executable
+          if [ -f "QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher" ]; then
+            chmod +x "QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher"
+            echo "✅ ARM64 executable verified and permissions set"
+          else
+            echo "❌ ARM64 executable missing"
+            exit 1
+          fi
+          
           echo "📋 ARM64 app structure:"
           find QuickLauncher-ARM64.app -name "*.plist" -o -name "QuickLauncher" | head -10
           
@@ -212,7 +296,73 @@ jobs:
         echo "📋 Available binaries:"
         ls -la QuickLauncher-*.app
         
-        # Final build verification summary
+        # Comprehensive build verification
+        echo ""
+        echo "🔍 Final Comprehensive Build Verification:"
+        
+        for arch in Intel ARM64; do
+          APP_NAME="QuickLauncher-$arch.app"
+          echo ""
+          echo "📋 $arch App Verification:"
+          
+          if [ -d "$APP_NAME" ]; then
+            # Check executable
+            if [ -f "$APP_NAME/Contents/MacOS/QuickLauncher" ]; then
+              echo "  ✅ Executable: $(file "$APP_NAME/Contents/MacOS/QuickLauncher" | cut -d: -f2-)"
+            else
+              echo "  ❌ Missing executable"
+            fi
+            
+            # Check Info.plist
+            if [ -f "$APP_NAME/Contents/Info.plist" ]; then
+              echo "  ✅ Info.plist exists"
+              BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP_NAME/Contents/Info.plist" 2>/dev/null || echo "N/A")
+              echo "    - Bundle ID: $BUNDLE_ID"
+            else
+              echo "  ❌ Info.plist missing"
+            fi
+            
+            # Check Resources directory
+            if [ -d "$APP_NAME/Contents/Resources" ]; then
+              RESOURCE_COUNT=$(find "$APP_NAME/Contents/Resources" -type f | wc -l | tr -d ' ')
+              echo "  ✅ Resources directory ($RESOURCE_COUNT files)"
+              
+              # Check for key resources
+              [ -f "$APP_NAME/Contents/Resources/Assets.car" ] && echo "    ✅ Assets.car"
+              [ -d "$APP_NAME/Contents/Resources/Assets.xcassets" ] && echo "    ✅ Assets.xcassets"
+              [ -d "$APP_NAME/Contents/Resources/en.lproj" ] && echo "    ✅ en.lproj"
+              [ -f "$APP_NAME/Contents/Resources/MainMenu.nib" ] && echo "    ✅ MainMenu.nib"
+            else
+              echo "  ❌ Resources directory missing"
+            fi
+            
+            # Check Frameworks
+            if [ -d "$APP_NAME/Contents/Frameworks" ]; then
+              FRAMEWORK_COUNT=$(find "$APP_NAME/Contents/Frameworks" -name "*.dylib" | wc -l | tr -d ' ')
+              echo "  ✅ Frameworks directory ($FRAMEWORK_COUNT dylib files)"
+              
+              # Check for Swift libraries
+              [ -f "$APP_NAME/Contents/Frameworks/libswiftFoundation.dylib" ] && echo "    ✅ Swift Foundation"
+              [ -f "$APP_NAME/Contents/Frameworks/libswiftAppKit.dylib" ] && echo "    ✅ Swift AppKit"
+              [ -d "$APP_NAME/Contents/Frameworks/QuickLauncherCore.framework" ] && echo "    ✅ QuickLauncherCore"
+            else
+              echo "  ❌ Frameworks directory missing"
+            fi
+            
+            # Check PlugIns
+            if [ -d "$APP_NAME/Contents/PlugIns" ]; then
+              echo "  ✅ PlugIns directory"
+              [ -d "$APP_NAME/Contents/PlugIns/QuickLauncherFinderExtension.appex" ] && echo "    ✅ Finder Extension"
+            else
+              echo "  ⚠️ PlugIns directory (optional for basic functionality)"
+            fi
+            
+            echo "  📊 App bundle size: $(du -sh "$APP_NAME" | cut -f1)"
+          else
+            echo "  ❌ App bundle not found"
+          fi
+        done
+        
         echo ""
         echo "🎉 Build Summary:"
         echo "📊 Architecture builds completed:"
@@ -247,15 +397,42 @@ jobs:
         echo "📦 Packaging Intel version..."
         mkdir -p Release/Intel
         
-        # Verify the app structure first
+        # Verify the complete app structure before packaging
         echo "🔍 Verifying Intel app structure before packaging..."
-        if [ ! -d "QuickLauncher-Intel.app/Contents" ]; then
-          echo "❌ Intel app structure is incomplete. Checking build output..."
-          ls -la QuickLauncher-Intel.app/
-          find DerivedData-Intel/Build/Products/Release/ -name "*.app" -type d
-          echo "🔄 Re-copying Intel app from build output..."
-          cp -r DerivedData-Intel/Build/Products/Release/QuickLauncher.app QuickLauncher-Intel.app
+        
+        # Check critical components
+        MISSING_COMPONENTS=""
+        if [ ! -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ]; then
+          MISSING_COMPONENTS="$MISSING_COMPONENTS MacOS/QuickLauncher"
         fi
+        if [ ! -d "QuickLauncher-Intel.app/Contents/Frameworks" ]; then
+          MISSING_COMPONENTS="$MISSING_COMPONENTS Frameworks"
+        fi
+        if [ ! -d "QuickLauncher-Intel.app/Contents/Resources" ]; then
+          MISSING_COMPONENTS="$MISSING_COMPONENTS Resources"
+        fi
+        
+        if [ -n "$MISSING_COMPONENTS" ]; then
+          echo "❌ Intel app missing critical components: $MISSING_COMPONENTS"
+          echo "🔄 Re-copying complete Intel app from build output..."
+          rm -rf QuickLauncher-Intel.app
+          cp -R DerivedData-Intel/Build/Products/Release/QuickLauncher.app QuickLauncher-Intel.app
+          
+          # Verify again after re-copy
+          if [ ! -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ]; then
+            echo "❌ CRITICAL: Intel executable still missing after re-copy!"
+            echo "Build output contents:"
+            ls -la DerivedData-Intel/Build/Products/Release/QuickLauncher.app/Contents/ 2>/dev/null || echo "No Contents directory found"
+            exit 1
+          fi
+        fi
+        
+        # Final verification of complete structure
+        echo "✅ Intel app final structure verification:"
+        echo "  - Executable: $([ -f "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" ] && echo "✅" || echo "❌")"
+        echo "  - Frameworks: $([ -d "QuickLauncher-Intel.app/Contents/Frameworks" ] && echo "✅" || echo "❌")"
+        echo "  - Resources: $([ -d "QuickLauncher-Intel.app/Contents/Resources" ] && echo "✅" || echo "❌")"
+        echo "  - PlugIns: $([ -d "QuickLauncher-Intel.app/Contents/PlugIns" ] && echo "✅" || echo "⚠️")"
         
         # Ensure the app has correct permissions and structure
         chmod -R 755 QuickLauncher-Intel.app
@@ -313,28 +490,8 @@ jobs:
         
         /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "$INFO_PLIST"
         
-        # Copy Resources and localization files to both versions
-        echo "🌍 Copying resources and localization files..."
-        for arch in Intel ARM64; do
-          # Copy Assets if they exist
-          if [ -d "QuickLauncher/Assets.xcassets" ]; then
-            cp -r QuickLauncher/Assets.xcassets "Release/$arch/QuickLauncher.app/Contents/Resources/"
-          fi
-          
-          # Copy localization files
-          if [ -d "QuickLauncher/de.lproj" ]; then
-            mkdir -p "Release/$arch/QuickLauncher.app/Contents/Resources/"
-            cp -r QuickLauncher/*.lproj "Release/$arch/QuickLauncher.app/Contents/Resources/" 2>/dev/null || true
-          fi
-          
-          # Copy MainMenu.xib if needed
-          if [ -f "QuickLauncher/MainMenu.xib" ]; then
-            mkdir -p "Release/$arch/QuickLauncher.app/Contents/Resources/"
-            cp QuickLauncher/MainMenu.xib "Release/$arch/QuickLauncher.app/Contents/Resources/"
-          fi
-          
-          echo "✅ $arch resources copied"
-        done
+        # NOTE: Resources are already compiled and included by Xcode build
+        # No need to copy source resources - they would corrupt the built app structure
         
         # Verify app structure
         for arch in Intel ARM64; do

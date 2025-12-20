@@ -38,6 +38,12 @@ jobs:
         chmod +x scripts/ci-setup.sh
         ./scripts/ci-setup.sh
 
+    - name: Install Dependencies
+      run: |
+        set -euo pipefail
+        echo "📦 Installing dependencies..."
+        brew install xz
+
     - name: Build App
       run: |
         # Use proper destination that includes architecture
@@ -74,9 +80,15 @@ jobs:
         rm -rf CI-Artifacts
 
         mkdir -p CI-Artifacts
-        cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
-        echo "🔧 Fixing Framework structure in CI-Artifacts..."
+        # Step 1: Copy and preserve original build
+        cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}-Original.app"
+        echo "📦 Original app copied"
+        
+        # Step 2: Create working copy for modifications
+        cp -R "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}-Original.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        
+        echo "🔧 Checking Framework structure in CI-Artifacts..."
         FRAMEWORKS_DIR="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework"
         
         if [ ! -d "$FRAMEWORKS_DIR" ]; then
@@ -87,44 +99,47 @@ jobs:
         fi
 
         echo "📁 Framework directory exists: $FRAMEWORKS_DIR"
-        echo "📋 Before fix - Framework contents:"
-        ls -la "$FRAMEWORKS_DIR"
-
-        cd "$FRAMEWORKS_DIR"
-        echo "  🗑️ Removing top-level duplicate files/directories..."
-        rm -rf Resources QuickLauncherCore Versions/Current
-        echo "  🔗 Creating symlinks..."
-        ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
-        ln -sf Versions/A/Resources Resources
-        cd Versions
-        ln -sf A Current
-        echo "  ✅ Symlinks created."
-        cd /Users/runner/work/QuickLauncher/QuickLauncher
-        
-        echo "📋 After fix - Framework contents:"
+        echo "📋 Framework structure check:"
         ls -la "$FRAMEWORKS_DIR"
         
-        echo "🔍 Verifying symlinks before compression..."
-        if [ -L "$FRAMEWORKS_DIR/QuickLauncherCore" ]; then
-            echo "    ✅ QuickLauncherCore is symlink: $(readlink $FRAMEWORKS_DIR/QuickLauncherCore)"
-        else
-            echo "    ❌ QuickLauncherCore is NOT a symlink"
-            file "$FRAMEWORKS_DIR/QuickLauncherCore"
-        fi
-        
-        if [ -L "$FRAMEWORKS_DIR/Resources" ]; then
-            echo "    ✅ Resources is symlink: $(readlink $FRAMEWORKS_DIR/Resources)"
-        else
-            echo "    ❌ Resources is NOT a symlink"
-        fi
-        
+        # Check if Versions/Current is a symlink or directory
         if [ -L "$FRAMEWORKS_DIR/Versions/Current" ]; then
-            echo "    ✅ Versions/Current is symlink: $(readlink $FRAMEWORKS_DIR/Versions/Current)"
+            echo "  ✅ Versions/Current is already a symlink: $(readlink $FRAMEWORKS_DIR/Versions/Current)"
+            echo "  🔧 Framework structure is correct, no changes needed"
+        elif [ -d "$FRAMEWORKS_DIR/Versions/Current" ]; then
+            echo "  ⚠️ Versions/Current is a directory, creating proper symlink structure"
+            cd "$FRAMEWORKS_DIR"
+            echo "    🔄 Moving Current directory contents to A..."
+            if [ ! -d "Versions/A" ]; then
+                mv "Versions/Current" "Versions/A"
+            else
+                # Merge contents if A already exists
+                cp -R "Versions/Current/"* "Versions/A/" 2>/dev/null || true
+                rm -rf "Versions/Current"
+            fi
+            echo "    🔗 Creating Current -> A symlink..."
+            cd Versions
+            ln -sf A Current
+            cd ..
+            echo "    🔗 Updating top-level symlinks..."
+            rm -f QuickLauncherCore Resources 2>/dev/null || true
+            ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
+            ln -sf Versions/A/Resources Resources
+            cd /Users/runner/work/QuickLauncher/QuickLauncher
+            echo "  ✅ Symlink structure fixed"
         else
-            echo "    ❌ Versions/Current is NOT a symlink"
+            echo "  ❌ Versions/Current missing"
         fi
         
-        echo "✅ Framework structure fix completed"
+        echo "📋 Final Framework structure:"
+        ls -la "$FRAMEWORKS_DIR"
+        
+        # Step 3: Package after framework fixes (before library cleanup)
+        echo "📦 Creating post-framework-fix package..."
+        cd CI-Artifacts
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-PostFrameworkFix.tar.xz" "QuickLauncher-${{ matrix.config_name }}.app"
+        echo "  📊 Post-framework-fix package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-PostFrameworkFix.tar.xz" | cut -f1)"
+        cd ..
         
         echo "🧹 Running library cleanup script..."
         if [ -f "./scripts/clean-libs.sh" ]; then
@@ -143,12 +158,45 @@ jobs:
         APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
         echo "📊 Final app size: $APP_SIZE"
         
+        # Step 4: Create final packages
+        echo "📦 Creating final packages..."
+        cd CI-Artifacts
+        
+        # Package original build
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Original.app"
+        echo "  📊 Original package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" | cut -f1)"
+        
+        # Package final build
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "QuickLauncher-${{ matrix.config_name }}.app"
+        echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)"
+        
+        # Show all packages
+        echo "📋 All generated packages:"
+        ls -lh *.tar.xz
+        
+        cd ..
+        
         echo "✅ ${{ matrix.config_name }} build completed"
+
+    - name: Verify Artifacts
+      run: |
+        echo "🔍 Verifying created packages..."
+        cd CI-Artifacts
+        
+        chmod +x ../scripts/verify-artifact.sh
+        
+        for package in *.tar.xz; do
+          echo "📦 Verifying $package..."
+          package_name=$(basename "$package" .tar.xz)
+          ../scripts/verify-artifact.sh "$package_name"
+          echo "---"
+        done
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: QuickLauncher-${{ matrix.config_name }}-${{ github.run_number }}
-        path: CI-Artifacts/
+        path: CI-Artifacts/*.tar.xz
         retention-days: 7
         compression-level: 0
+        if-no-files-found: error

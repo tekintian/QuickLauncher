@@ -40,13 +40,19 @@ jobs:
 
     - name: Build App
       run: |
+        # Use proper destination that includes architecture
+        if [[ "${{ matrix.architecture }}" == "x86_64" ]]; then
+          DESTINATION="platform=macOS,arch=x86_64"
+        else
+          DESTINATION="platform=macOS,arch=arm64"
+        fi
+        
         xcodebuild clean build \
           -project QuickLauncher.xcodeproj \
           -scheme QuickLauncher \
           -configuration Release \
           -derivedDataPath DerivedData-${{ matrix.config_name }} \
-          -arch ${{ matrix.architecture }} \
-          -destination generic/platform=macOS \
+          -destination "$DESTINATION" \
           MACOSX_DEPLOYMENT_TARGET="${{ matrix.deployment_target }}" \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \

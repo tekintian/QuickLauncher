@@ -27,7 +27,7 @@ import PackageDescription
 let package = Package(
     name: "QuickLauncher",
     platforms: [
-        .macOS(.v10_15)
+        .macOS(.v10_13)
     ],
     dependencies: [
         // Use remote ShortcutRecorder dependency for CI builds

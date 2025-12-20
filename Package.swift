@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "QuickLauncher",
     platforms: [
-        .macOS(.v10_15)
+        .macOS(.v10_13)
     ],
     dependencies: [
         // 使用本地ShortcutRecorder依赖，避免每次构建时访问远程仓库

@@ -83,183 +83,26 @@ jobs:
         mkdir -p CI-Artifacts
         # Save build output tar for reference
         mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/build-output-${{ matrix.config_name }}.tar.xz
-        
-        echo "🔧 Checking Framework structure..."
-        FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks/QuickLauncherCore.framework"
-        
-        if [ ! -d "$FRAMEWORKS_DIR" ]; then
-            echo "⚠️ No Frameworks directory found"
-            echo "📁 Available Frameworks:"
-            ls -la "$APP_PATH/Contents/Frameworks/" || echo "No Frameworks directory"
-            exit 0
-        fi
 
-        echo "📁 Framework directory exists: $FRAMEWORKS_DIR"
-        echo "📋 Framework structure check:"
-        ls -la "$FRAMEWORKS_DIR"
-        
-        # Check if Versions/Current is a symlink or directory
-        if [ -L "$FRAMEWORKS_DIR/Versions/Current" ]; then
-            CURRENT_TARGET=$(readlink "$FRAMEWORKS_DIR/Versions/Current")
-            echo "  ✅ Versions/Current is symlink: $CURRENT_TARGET"
-            
-            # Verify symlink targets are valid
-            if [ "$CURRENT_TARGET" = "A" ] && [ -d "$FRAMEWORKS_DIR/Versions/A" ]; then
-                echo "  ✅ Symlink structure is correct"
-            else
-                echo "  ❌ Symlink structure broken - fixing..."
-                cd "$FRAMEWORKS_DIR"
-                rm -f Versions/Current
-                ln -sf A Versions/Current
-                cd /Users/runner/work/QuickLauncher/QuickLauncher
-            fi
-        elif [ -d "$FRAMEWORKS_DIR/Versions/Current" ]; then
-            echo "  ⚠️ Versions/Current is a directory, creating proper symlink structure"
-            cd "$FRAMEWORKS_DIR"
-            echo "    🔄 Moving Current directory contents to A..."
-            if [ ! -d "Versions/A" ]; then
-                mv "Versions/Current" "Versions/A"
-            else
-                # Merge contents if A already exists
-                cp -R "Versions/Current/"* "Versions/A/" 2>/dev/null || true
-                rm -rf "Versions/Current"
-            fi
-            echo "    🔗 Creating Current -> A symlink..."
-            cd Versions
-            ln -sf A Current
-            cd ..
-            echo "    🔗 Updating top-level symlinks..."
-            rm -f QuickLauncherCore Resources 2>/dev/null || true
-            ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
-            ln -sf Versions/A/Resources Resources
-            cd /Users/runner/work/QuickLauncher/QuickLauncher
-            echo "  ✅ Symlink structure fixed"
-        else
-            echo "  ❌ Versions/Current missing"
-        fi
-        
-        echo "📋 Final Framework structure:"
-        ls -la "$FRAMEWORKS_DIR"
-        
-        # Record original size before any modifications
-        echo "🔍 Recording app size before modifications..."
-        ORIGINAL_SIZE=$(du -sh "$APP_PATH" | cut -f1)
-        echo "  Original app size: $ORIGINAL_SIZE"
-        
-        # Detailed symlink verification
-        echo "🔍 Detailed symlink verification:"
-        if [ -L "$FRAMEWORKS_DIR/QuickLauncherCore" ]; then
-            BINARY_TARGET=$(readlink "$FRAMEWORKS_DIR/QuickLauncherCore")
-            if [ -f "$FRAMEWORKS_DIR/$BINARY_TARGET" ]; then
-                echo "  ✅ QuickLauncherCore symlink valid: $BINARY_TARGET"
-            else
-                echo "  ❌ QuickLauncherCore symlink broken: $BINARY_TARGET (target missing)"
-            fi
-        else
-            echo "  ❌ QuickLauncherCore is not a symlink!"
-            if [ -f "$FRAMEWORKS_DIR/QuickLauncherCore" ]; then
-                echo "  🚨 QuickLauncherCore is a real file - symlink was broken!"
-                echo "  🔄 Fixing: removing duplicate file and recreating symlink"
-                cd "$FRAMEWORKS_DIR"
-                rm -f QuickLauncherCore
-                ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
-                cd /Users/runner/work/QuickLauncher/QuickLauncher
-            fi
-        fi
-        
-        if [ -L "$FRAMEWORKS_DIR/Resources" ]; then
-            RESOURCES_TARGET=$(readlink "$FRAMEWORKS_DIR/Resources")
-            if [ -d "$FRAMEWORKS_DIR/$RESOURCES_TARGET" ]; then
-                echo "  ✅ Resources symlink valid: $RESOURCES_TARGET"
-            else
-                echo "  ❌ Resources symlink broken: $RESOURCES_TARGET (target missing)"
-            fi
-        else
-            echo "  ❌ Resources is not a symlink!"
-            if [ -d "$FRAMEWORKS_DIR/Resources" ]; then
-                echo "  🚨 Resources is a real directory - symlink was broken!"
-                echo "  🔄 Fixing: removing duplicate directory and recreating symlink"
-                cd "$FRAMEWORKS_DIR"
-                rm -rf Resources
-                ln -sf Versions/A/Resources Resources
-                cd /Users/runner/work/QuickLauncher/QuickLauncher
-            fi
-        fi
-        
-        # Check for duplicate files in Framework
-        echo "🔍 Checking for duplicate files in Framework:"
-        cd "$FRAMEWORKS_DIR"
-        DUPLICATE_FILES=$(find . -type f -exec basename {} \; | sort | uniq -d)
-        if [ -n "$DUPLICATE_FILES" ]; then
-            echo "  ⚠️ Duplicate files found (this is expected for localization files):"
-            echo "$DUPLICATE_FILES" | while read file; do
-                if [ -n "$file" ]; then
-                    echo "    📄 $file (found in multiple language folders)"
-                fi
-            done
-        else
-            echo "  ✅ No duplicate files found"
-        fi
-        cd /Users/runner/work/QuickLauncher/QuickLauncher
-        
+       
         # Step 3: Package original app (before modifications)
         echo "📦 Creating original package..."
         cd CI-Artifacts
         # Create a temporary copy with proper name
         echo "  📋 Copying from: $APP_PATH"
-        cp -R "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Original.app"
+        mv "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Original.app"
         tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Original.app"
-        rm -rf "QuickLauncher-${{ matrix.config_name }}-Original.app"
-        echo "  📊 Original package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" | cut -f1)"
-        cd ..
-        
+        mv "QuickLauncher-${{ matrix.config_name }}-Original.app" "QuickLauncher-${{ matrix.config_name }}.app"
+        APP_PATH="QuickLauncher-${{ matrix.config_name }}.app"
+
         echo "🧹 Running library cleanup script..."
-        
-        # Pre-cleanup size analysis
-        echo "📊 Pre-cleanup analysis:"
-        APP_SIZE_BEFORE=$(du -sh "$APP_PATH" | cut -f1)
-        echo "  App size before cleanup: $APP_SIZE_BEFORE"
-        
-        echo "  🔍 Detailed library size analysis:"
-        echo "    Frameworks directory:"
-        du -sh "$APP_PATH/Contents/Frameworks/"
-        echo "    Individual libraries:"
-        du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | sort -hr
-        LIBS_SIZE_BEFORE=$(du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
-        LIBS_COUNT_BEFORE=$(ls -1 "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
-        echo "    Total libraries size: $LIBS_SIZE_BEFORE ($LIBS_COUNT_BEFORE files)"
-        
+   
         if [ -f "./scripts/clean-libs.sh" ]; then
           chmod +x ./scripts/clean-libs.sh
           ./scripts/clean-libs.sh "$APP_PATH"
           echo "✅ Library cleanup completed"
         else
           echo "⚠️ clean-libs.sh script not found"
-        fi
-
-        # Post-cleanup size analysis
-        echo "📊 Post-cleanup analysis:"
-        APP_SIZE_AFTER=$(du -sh "$APP_PATH" | cut -f1)
-        echo "  App size after cleanup: $APP_SIZE_AFTER"
-        
-        echo "  🔍 Detailed library size analysis:"
-        echo "    Frameworks directory:"
-        du -sh "$APP_PATH/Contents/Frameworks/"
-        echo "    Individual libraries:"
-        du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | sort -hr
-        LIBS_SIZE_AFTER=$(du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
-        LIBS_COUNT_AFTER=$(ls -1 "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
-        echo "    Total libraries size: $LIBS_SIZE_AFTER ($LIBS_COUNT_AFTER files)"
-        
-        # Calculate size difference
-        echo "📊 Size difference analysis:"
-        echo "  Original size: $ORIGINAL_SIZE"
-        echo "  Before cleanup: $APP_SIZE_BEFORE"
-        echo "  After cleanup: $APP_SIZE_AFTER"
-        if [ "$APP_SIZE_BEFORE" != "$APP_SIZE_AFTER" ]; then
-            echo "  ✅ Library cleanup effective: size reduced from $APP_SIZE_BEFORE to $APP_SIZE_AFTER"
-        else
-            echo "  ⚠️ No size change detected"
         fi
         
         # Basic verification
@@ -271,16 +114,13 @@ jobs:
         cd CI-Artifacts
         # Create a temporary copy with proper name
         echo "  📋 Copying from: $APP_PATH"
-        cp -R "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Final.app"
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Final.app"
-        rm -rf "QuickLauncher-${{ matrix.config_name }}-Final.app"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "$APP_PATH"
+       
         echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)"
         
         # Show all packages
         echo "📋 All generated packages:"
         ls -lh *.tar.xz
-        
-        cd ..
         
         echo "✅ ${{ matrix.config_name }} build completed"
 

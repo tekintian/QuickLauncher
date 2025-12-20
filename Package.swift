@@ -9,7 +9,8 @@ let package = Package(
         .macOS(.v10_13)
     ],
     dependencies: [
-        // 使用本地ShortcutRecorder依赖，避免每次构建时访问远程仓库
+        // ShortcutRecorder dependency - local path for development, 
+        // automatically switches to remote URL in CI via ci-setup.sh
         .package(path: "./LocalDependencies/ShortcutRecorder")
     ],
     targets: [

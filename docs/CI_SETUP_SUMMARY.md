@@ -44,6 +44,120 @@
 | **ZIP** | `QuickLauncher-Intel.zip` | `QuickLauncher-ARM64.zip` | 备用压缩包 |
 | **校验和** | `*.sha256` | `*.sha256` | 文件完整性验证 |
 
+## 🎯 CI/CD 工作流设计理念
+
+### 为什么需要两个独立的工作流？
+
+QuickLauncher 项目采用了分离式的 CI/CD 设计，包含 **CI Workflow** 和 **Release Workflow** 两个独立但协作的工作流，这是现代软件开发的最佳实践。
+
+### 🧪 CI Workflow (`.github/workflows/ci.yml`)
+
+**核心目的**: 持续集成和代码质量保证
+
+```yaml
+触发条件:
+  push:
+    branches: [ main, master, develop ]  # 每次代码推送都验证
+  pull_request:
+    branches: [ main, master, develop ]  # 每次 PR 都检查
+```
+
+**主要职责**:
+- ✅ **快速验证**: 每次 code change 都验证构建是否正常
+- ✅ **多架构测试**: 同时测试 Intel x86_64 和 Apple Silicon ARM64 构建
+- ✅ **早期发现问题**: PR 阶段就能发现构建问题，避免集成地狱
+- ✅ **代码质量检查**: SwiftLint、语法检查、项目结构验证
+- ✅ **临时构建产物**: 7天有效期的 CI artifacts，仅用于验证
+
+**设计特点**:
+- 🏃 **快速反馈**: Debug 配置，构建速度快
+- 💰 **成本优化**: 临时存储，节省 Actions 费用
+- 🔍 **开发工具**: 专注于开发者体验
+
+### 🚀 Release Workflow (`.github/workflows/release.yml`)
+
+**核心目的**: 生产版本发布和用户交付
+
+```yaml
+触发条件:
+  push:
+    branches: [ main, master, develop ]  # 保持兼容性
+    tags:
+      - 'v*'  # 只有推送版本标签时才触发正式发布
+```
+
+**主要职责**:
+- 📦 **生产构建**: 优化的 Release 配置，性能最佳
+- 🏷️ **版本管理**: 自动创建 GitHub Release 和版本说明
+- 📋 **完整文档**: 详细的安装说明、使用指南、更新日志
+- 🔐 **代码签名**: 自签名或开发者证书，提升用户信任度
+- 📦 **多种格式**: DMG 安装包、ZIP 压缩包，满足不同用户需求
+- 🔐 **安全校验**: SHA256 文件完整性验证
+- 🌐 **永久存储**: 长期保存，用户随时可下载
+
+**设计特点**:
+- ⭐ **用户导向**: 用户体验优先
+- 🛡️ **质量保证**: 完整的测试和验证流程
+- 📚 **文档完整**: 自动生成专业的发布说明
+
+### 📊 对比分析
+
+| 特性维度 | CI Workflow | Release Workflow |
+|----------|-------------|------------------|
+| **触发频率** | 高频（每次推送） | 低频（版本发布） |
+| **构建配置** | Debug（快速验证） | Release（性能优化） |
+| **产物存储** | 7天临时 | 永久发布 |
+| **文件格式** | .app 包（验证用） | DMG + ZIP + 校验和 |
+| **代码签名** | 无 | 自签名/开发者证书 |
+| **版本说明** | 无 | 完整发布说明 |
+| **目标用户** | 开发者 | 最终用户 |
+| **主要目的** | 开发效率 | 交付质量 |
+
+### 🎯 实际工作流程
+
+#### 日常开发场景:
+```bash
+# 开发新功能
+git add .
+git commit -m "feat: 添加快捷键支持"
+git push origin feature-branch
+# → CI Workflow 自动运行 → 验证构建 → 如果失败，立即修复
+```
+
+#### 发布版本场景:
+```bash
+# 准备发布
+git checkout main
+git merge feature-branch
+git tag v1.0.0
+git push origin v1.0.0  
+# → Release Workflow 运行 → 创建正式发布文件 → 用户可下载
+```
+
+### 💡 设计优势
+
+1. **效率与质量平衡**:
+   - CI: 快速迭代，不阻塞开发
+   - Release: 精益求精，确保用户获得最佳体验
+
+2. **成本优化策略**:
+   - CI: 轻量级验证，节省计算资源
+   - Release: 完整构建，值得投入成本
+
+3. **风险隔离**:
+   - CI 问题影响开发，不影响用户
+   - Release 问题经过充分验证，风险极低
+
+4. **专业化分工**:
+   - CI: 面向开发者，注重技术细节
+   - Release: 面向用户，注重使用体验
+
+5. **可维护性**:
+   - 独立配置，易于调试和修改
+   - 清晰的职责边界，减少复杂性
+
+这种双工作流设计确保了开发效率和发布质量的完美平衡，是现代 macOS 应用项目推荐的 CI/CD 架构模式。
+
 ## 🔧 构建要求
 
 ### 系统兼容性
@@ -57,28 +171,38 @@
 
 ## 📋 使用方法
 
-### 1. 开发阶段
+### 1. 开发阶段 (CI Workflow)
 ```bash
-# 本地测试构建
+# 本地测试构建（模拟 CI 流程）
 ./scripts/test-ci-build.sh
 
-# 更新图标
+# 更新图标和资源
 ./scripts/update_app_icons.sh Resources/app-icon.png Resources/status-icon.png
-```
 
-### 2. 触发 CI
-```bash
-# 推送代码触发 CI
+# 日常开发 - 推送代码自动触发 CI 验证
 git add .
-git commit -m "feat: 添加新功能"
-git push origin main
+git commit -m "feat: 添加快捷键支持"
+git push origin feature-branch
+# → CI Workflow 自动运行 → 验证构建 → 获得快速反馈
+
+# 创建 PR 进一步验证代码质量
+# → CI Workflow 在 PR 上运行 → 确保集成无问题
 ```
 
-### 3. 创建发布
+### 2. 发布阶段 (Release Workflow)
 ```bash
-# 创建版本标签触发自动发布
-git tag v1.0.0
+# 准备发布版本
+git checkout main
+git merge feature-branch
+git tag v1.0.0  # 创建版本标签
 git push origin v1.0.0
+# → Release Workflow 自动运行 → 创建正式发布文件
+
+# 发布包含：
+# - Intel 和 ARM64 版本（DMG + ZIP）
+# - SHA256 校验和文件
+# - 完整的版本说明和安装指南
+# - 代码签名（自签名或开发者证书）
 ```
 
 ## 🔐 代码签名配置
@@ -126,20 +250,33 @@ xcodebuild -project QuickLauncher.xcodeproj -scheme QuickLauncher \
 ## 🔄 工作流程
 
 ```mermaid
-graph LR
-    A[代码推送] --> B[CI 构建]
-    B --> C[测试 Intel 版本]
-    B --> D[测试 ARM64 版本]
-    C --> E[检查通过]
-    D --> E[检查通过]
-    F[创建标签] --> G[自动发布]
-    G --> H[构建 Intel 版本]
-    G --> I[构建 ARM64 版本]
-    H --> J[创建 DMG/ZIP]
-    I --> J
-    J --> K[代码签名]
-    K --> L[生成校验和]
-    L --> M[发布到 GitHub]
+graph TB
+    subgraph "开发阶段"
+        A[代码推送/PR] --> B[CI Workflow]
+        B --> C[Debug 构建 - Intel]
+        B --> D[Debug 构建 - ARM64]
+        C --> E[质量检查]
+        D --> E
+        E --> F{通过?}
+        F -->|是| G[开发继续]
+        F -->|否| H[修复问题]
+        H --> A
+    end
+    
+    subgraph "发布阶段"
+        I[创建版本标签] --> J[Release Workflow]
+        J --> K[Release 构建 - Intel]
+        J --> L[Release 构建 - ARM64]
+        K --> M[生产优化]
+        L --> M
+        M --> N[代码签名]
+        N --> O[创建 DMG/ZIP]
+        O --> P[生成校验和]
+        P --> Q[自动发布说明]
+        Q --> R[GitHub Release]
+    end
+    
+    G -.-> I
 ```
 
 ## 🛠️ 故障排除

@@ -57,9 +57,13 @@ for framework in "$FRAMEWORKS_DIR"/*.framework; do
         mkdir -p "$framework/Versions/A/Resources"
     fi
     
-    # Create Current -> A symlink
+    # Create Current -> A symlink (remove directory if it exists)
     CURRENT_LINK="$framework/Versions/Current"
     if [ ! -L "$CURRENT_LINK" ]; then
+        # Remove if it exists as directory or broken link
+        if [ -e "$CURRENT_LINK" ] || [ -L "$CURRENT_LINK" ]; then
+            rm -rf "$CURRENT_LINK"
+        fi
         ln -sf A "$CURRENT_LINK"
         echo "    🔗 Created Current -> A symlink"
     else

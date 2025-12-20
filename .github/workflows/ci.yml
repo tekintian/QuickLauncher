@@ -68,6 +68,18 @@ jobs:
         fi
         
         echo "📁 Found app at: $APP_PATH"
+
+        echo "🔧 Running Framework fix script..."
+        if [ -f "./scripts/tiny-fw.sh" ]; then
+          chmod +x ./scripts/tiny-fw.sh
+          ./scripts/tiny-fw.sh $APP_PATH"
+          echo "✅ Framework fix script completed"
+        else
+          echo "❌ tiny-fw.sh script not found"
+          exit 1
+        fi
+
+
         mkdir -p CI-Artifacts
         cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
@@ -86,15 +98,7 @@ jobs:
           done
         fi
         
-        echo "🔧 Running Framework fix script..."
-        if [ -f "./scripts/fix-frameworks.sh" ]; then
-          chmod +x ./scripts/fix-frameworks.sh
-          ./scripts/fix-frameworks.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
-          echo "✅ Framework fix script completed"
-        else
-          echo "❌ fix-frameworks.sh script not found"
-          exit 1
-        fi
+       
         
         echo "🧹 Running library cleanup script..."
         if [ -f "./scripts/clean-libs.sh" ]; then

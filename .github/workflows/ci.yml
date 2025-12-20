@@ -89,6 +89,7 @@ jobs:
         cd Versions
         ln -sf A Current
         echo "  ✅ Symlinks created."
+        touch test_a.txt
         cd /Users/runner/work/QuickLauncher/QuickLauncher
         echo "✅ Framework structure fix completed"
 

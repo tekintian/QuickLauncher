@@ -83,13 +83,6 @@ jobs:
         mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/build-output-${{ matrix.config_name }}.tar.xz
 
        
-        # Step 3: Package original app (before modifications)
-        echo "📦 Creating original package..."
-        cd CI-Artifacts
-        # Create a temporary copy with proper name
-        echo "  📋 Copying from: $APP_PATH"
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "$APP_PATH"
-      
         echo "🧹 Running library cleanup script..."
    
         if [ -f "./scripts/clean-libs.sh" ]; then

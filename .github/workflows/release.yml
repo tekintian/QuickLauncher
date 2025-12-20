@@ -86,7 +86,7 @@ jobs:
         
         echo "find app bundle at: $APP_PATH"
 
-        # Step 3: Prepare CI-Artifacts directory
+        # Step 3: Prepare CI-Artifacts directory (same as CI workflow)
         rm -rf CI-Artifacts
         mkdir -p CI-Artifacts
 
@@ -104,19 +104,25 @@ jobs:
         [ -f "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         
-        # Step 4: Move app to release directory with architecture name
-        mkdir -p Release/${{ matrix.config_name }}
-        echo " moving $APP_PATH to Release/${{ matrix.config_name }}/QuickLauncher.app "
-        mv $APP_PATH Release/${{ matrix.config_name }}/QuickLauncher.app
+        # Step 4: Package app bundle like CI workflow, but don't compress for release
+        echo " moving $APP_PATH to CI-Artifacts/QuickLauncher.app "
+        mv $APP_PATH CI-Artifacts/QuickLauncher.app
         
         # Verify deployment target in Info.plist
-        INFO_PLIST="Release/${{ matrix.config_name }}/QuickLauncher.app/Contents/Info.plist"
+        INFO_PLIST="CI-Artifacts/QuickLauncher.app/Contents/Info.plist"
         if [ -f "$INFO_PLIST" ]; then
           echo "✅ ${{ matrix.config_name }} Info.plist exists, updating deployment target..."
           /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${{ matrix.deployment_target }}" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
         fi
         
         echo "✅ ${{ matrix.config_name }} build completed"
+        
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.config_name }}-build
+        path: CI-Artifacts/
+        retention-days: 1
 
   package-release:
     needs: build
@@ -136,14 +142,45 @@ jobs:
       run: |
         mkdir -p Release/Intel Release/ARM64
         
+        # Check what artifacts were downloaded
+        echo "📋 Downloaded artifacts structure:"
+        find artifacts -type d -name "*build*" || echo "No build artifacts found"
+        ls -la artifacts/ || echo "Empty artifacts directory"
+        
         # Extract Intel build if exists
-        if [ -d "artifacts/Intel" ]; then
-          cp -R artifacts/Intel/* Release/Intel/
+        if [ -d "artifacts/Intel-build" ]; then
+          echo "📦 Extracting Intel build..."
+          cp -R artifacts/Intel-build/* Release/Intel/
+          # The app should be at Release/Intel/QuickLauncher.app
+          if [ -f "Release/Intel/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
+            echo "✅ Intel app extracted successfully"
+          else
+            echo "❌ Intel app extraction failed"
+            find Release/Intel -name "*.app" -type d || echo "No .app found in Intel release"
+            exit 1
+          fi
+        else
+          echo "❌ Intel build artifact not found"
+          find artifacts -type d
+          exit 1
         fi
         
         # Extract ARM64 build if exists  
-        if [ -d "artifacts/ARM64" ]; then
-          cp -R artifacts/ARM64/* Release/ARM64/
+        if [ -d "artifacts/ARM64-build" ]; then
+          echo "📦 Extracting ARM64 build..."
+          cp -R artifacts/ARM64-build/* Release/ARM64/
+          # The app should be at Release/ARM64/QuickLauncher.app
+          if [ -f "Release/ARM64/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
+            echo "✅ ARM64 app extracted successfully"
+          else
+            echo "❌ ARM64 app extraction failed"
+            find Release/ARM64 -name "*.app" -type d || echo "No .app found in ARM64 release"
+            exit 1
+          fi
+        else
+          echo "❌ ARM64 build artifact not found"
+          find artifacts -type d
+          exit 1
         fi
         
         # Verify both architectures were built

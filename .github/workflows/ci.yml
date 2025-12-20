@@ -95,7 +95,7 @@ jobs:
         # Build using Xcode project with enhanced parameters
         xcodebuild -project QuickLauncher.xcodeproj \
           -scheme QuickLauncher \
-          -configuration Debug \
+          -configuration Release \
           -arch ${{ matrix.arch }} \
           -derivedDataPath "DerivedData-${{ matrix.config_name }}" \
           MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }} \

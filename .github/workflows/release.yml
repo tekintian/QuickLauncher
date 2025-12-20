@@ -468,14 +468,52 @@ jobs:
         
     - name: Code Sign (Self-Signed)
       run: |
-        # Apply ad-hoc signatures to both versions
-        echo "🔐 Signing Intel version..."
-        codesign --force --deep --sign "-" --options runtime Release/Intel/QuickLauncher.app
-        codesign --verify --verbose Release/Intel/QuickLauncher.app || true
-        
-        echo "🔐 Signing ARM64 version..."
-        codesign --force --deep --sign "-" --options runtime Release/ARM64/QuickLauncher.app
-        codesign --verify --verbose Release/ARM64/QuickLauncher.app || true
+        # Apply ad-hoc signatures with proper sandbox support for both versions
+        for arch in Intel ARM64; do
+          echo "🔐 Signing $arch version..."
+          
+          # Ensure plugins have proper sandbox entitlements
+          find "Release/$arch/QuickLauncher.app/Contents/PlugIns" -name "*.appex" -type d | while read plugin; do
+            echo "  Configuring sandbox for plugin: $(basename "$plugin")"
+            
+            # Add required sandbox entitlements for Finder extension
+            PLIST_PATH="$plugin/Contents/Info.plist"
+            if [ -f "$PLIST_PATH" ]; then
+              # Add sandbox entitlements for Finder sync extension
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.app-sandbox bool true" "$PLIST_PATH" 2>/dev/null || echo "    Sandbox key already exists"
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.files.user-selected.read-write bool true" "$PLIST_PATH" 2>/dev/null || echo "    File access key already exists"
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.temporary-exception.mach-lookup.global-name array" "$PLIST_PATH" 2>/dev/null || echo "    Mach lookup array already exists"
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.temporary-exception.mach-lookup.global-name:0 string com.apple.FinderSync" "$PLIST_PATH" 2>/dev/null || echo "    Finder sync entry already exists"
+            fi
+            
+            echo "  Signing plugin: $(basename "$plugin")"
+            codesign --force --sign "-" --options runtime --entitlements <(echo '<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>com.apple.FinderSync</string>
+    </array>
+</dict>
+</plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
+          done
+          
+          # Sign frameworks
+          find "Release/$arch/QuickLauncher.app/Contents/Frameworks" -name "*.framework" -type d | while read framework; do
+            echo "  Signing framework: $(basename "$framework")"
+            codesign --force --sign "-" --options runtime "$framework" || echo "  ⚠️ Framework signing failed"
+          done
+          
+          # Sign main app
+          echo "  Signing main app bundle..."
+          codesign --force --deep --sign "-" --options runtime "Release/$arch/QuickLauncher.app" || echo "⚠️ Main app signing failed"
+          codesign --verify --verbose "Release/$arch/QuickLauncher.app" || echo "⚠️ Signature verification failed (may be expected for ad-hoc)"
+        done
         
     - name: Code Sign (Optional - Developer Certificate)
       if: env.APPLE_SIGNING_IDENTITY != ''

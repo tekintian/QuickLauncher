@@ -141,9 +141,49 @@ jobs:
         # NOTE: Resources are already compiled and included by Xcode build
         # No need to copy source resources - they would corrupt the built app structure
         
-        # Apply ad-hoc signature for macOS compatibility
-        echo "🔐 Applying ad-hoc signature..."
-        codesign --force --deep --sign "-" --options runtime "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" || echo "⚠️ Ad-hoc signing failed (may be expected on CI)"
+        # Apply ad-hoc signature for macOS compatibility - sign all components with sandbox support
+        echo "🔐 Applying ad-hoc signature to all components..."
+        
+        # Ensure plugins have proper sandbox entitlements
+        find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/PlugIns" -name "*.appex" -type d | while read plugin; do
+          echo "  Configuring sandbox for plugin: $(basename "$plugin")"
+          
+          # Add required sandbox entitlements for Finder extension
+          PLIST_PATH="$plugin/Contents/Info.plist"
+          if [ -f "$PLIST_PATH" ]; then
+            # Add sandbox entitlements for Finder sync extension
+            /usr/libexec/PlistBuddy -c "Add :com.apple.security.app-sandbox bool true" "$PLIST_PATH" 2>/dev/null || echo "    Sandbox key already exists"
+            /usr/libexec/PlistBuddy -c "Add :com.apple.security.files.user-selected.read-write bool true" "$PLIST_PATH" 2>/dev/null || echo "    File access key already exists"
+            /usr/libexec/PlistBuddy -c "Add :com.apple.security.temporary-exception.mach-lookup.global-name array" "$PLIST_PATH" 2>/dev/null || echo "    Mach lookup array already exists"
+            /usr/libexec/PlistBuddy -c "Add :com.apple.security.temporary-exception.mach-lookup.global-name:0 string com.apple.FinderSync" "$PLIST_PATH" 2>/dev/null || echo "    Finder sync entry already exists"
+          fi
+          
+          echo "  Signing plugin: $(basename "$plugin")"
+          codesign --force --sign "-" --options runtime --entitlements <(echo '<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+    <array>
+        <string>com.apple.FinderSync</string>
+    </array>
+</dict>
+</plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
+        done
+        
+        # Sign frameworks
+        find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read framework; do
+          echo "  Signing framework: $(basename "$framework")"
+          codesign --force --sign "-" --options runtime "$framework" || echo "  ⚠️ Framework signing failed"
+        done
+        
+        # Sign main app
+        echo "  Signing main app bundle..."
+        codesign --force --deep --sign "-" --options runtime "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" || echo "⚠️ Main app signing failed"
         
         # Verify app structure in artifact
         echo "🔍 Verifying CI artifact structure..."

@@ -28,7 +28,7 @@ rm -rf build/
 
 # 测试构建（ad hoc 签名）
 echo "🔨 开始构建（ad hoc 签名）..."
-xcodebuild -workspace QuickLauncher.xcworkspace \
+xcodebuild -project QuickLauncher.xcodeproj \
            -scheme QuickLauncher \
            -configuration Debug \
            -derivedDataPath build \

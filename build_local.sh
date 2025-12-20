@@ -39,7 +39,7 @@ rm -rf build/
 
 # 开始构建
 echo "📦 开始构建..."
-xcodebuild -workspace QuickLauncher.xcworkspace \
+xcodebuild -project QuickLauncher.xcodeproj \
            -scheme QuickLauncher \
            -configuration Release \
            -derivedDataPath build \

@@ -83,27 +83,27 @@ jobs:
     - name: Build Release
       run: |
         # Set minimum macOS version for compatibility
-        export MACOSX_DEPLOYMENT_TARGET=10.15
+        export MACOSX_DEPLOYMENT_TARGET=10.13
         
         # Clean previous builds
         rm -rf build
         rm -rf DerivedData*
         
-        # Build Intel version for macOS 10.15 compatibility using project
+        # Build Intel version for macOS 10.13 compatibility using project
         echo "🏗️ Building Intel (x86_64) version..."
         xcodebuild -project QuickLauncher.xcodeproj \
           -scheme QuickLauncher \
           -configuration Release \
           -arch x86_64 \
           -derivedDataPath DerivedData-Intel \
-          MACOSX_DEPLOYMENT_TARGET=10.15 \
+          MACOSX_DEPLOYMENT_TARGET=10.13 \
           ONLY_ACTIVE_ARCH=NO \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO \
           ENABLE_BITCODE=NO \
           SWIFT_OPTIMIZATION_LEVEL=-O \
-          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.QuickLauncher \
+          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.app.QuickLauncher \
           MARKETING_VERSION=1.0.0 \
           CURRENT_PROJECT_VERSION=1 \
           DEVELOPMENT_LANGUAGE=en \
@@ -178,7 +178,7 @@ jobs:
           CODE_SIGNING_ALLOWED=NO \
           ENABLE_BITCODE=NO \
           SWIFT_OPTIMIZATION_LEVEL=-O \
-          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.QuickLauncher \
+          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.app.QuickLauncher \
           MARKETING_VERSION=1.0.0 \
           CURRENT_PROJECT_VERSION=1 \
           DEVELOPMENT_LANGUAGE=en \
@@ -398,7 +398,7 @@ jobs:
         INFO_PLIST="Release/Intel/QuickLauncher.app/Contents/Info.plist"
         if [ -f "$INFO_PLIST" ]; then
           echo "✅ Intel Info.plist exists, updating deployment target..."
-          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.15" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
+          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.13" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
         else
           echo "❌ CRITICAL: Intel Info.plist missing after move!"
           exit 1
@@ -506,8 +506,25 @@ jobs:
           # Sign frameworks
           find "Release/$arch/QuickLauncher.app/Contents/Frameworks" -name "*.framework" -type d | while read framework; do
             echo "  Signing framework: $(basename "$framework")"
+            
+            # Fix framework library ID for proper dylib loading
+            FRAMEWORK_NAME=$(basename "$framework" .framework)
+            FRAMEWORK_BINARY="$framework/$FRAMEWORK_NAME"
+            if [ -f "$FRAMEWORK_BINARY" ]; then
+              echo "    Fixing framework library ID for $FRAMEWORK_NAME"
+              install_name_tool -id "@rpath/$FRAMEWORK_NAME.framework/Versions/A/$FRAMEWORK_NAME" "$FRAMEWORK_BINARY" 2>/dev/null || echo "    Library ID already correct"
+            fi
+            
             codesign --force --sign "-" --options runtime "$framework" || echo "  ⚠️ Framework signing failed"
           done
+          
+          # Fix main app dependency paths
+          echo "  Fixing main app dependency paths..."
+          MAIN_BINARY="Release/$arch/QuickLauncher.app/Contents/MacOS/QuickLauncher"
+          if [ -f "$MAIN_BINARY" ]; then
+            # Fix dylib references to use proper framework paths
+            install_name_tool -change "@rpath/QuickLauncher.debug.dylib" "@rpath/QuickLauncherCore.framework/Versions/A/QuickLauncherCore" "$MAIN_BINARY" 2>/dev/null || echo "    Dependencies already correct"
+          fi
           
           # Sign main app
           echo "  Signing main app bundle..."
@@ -634,7 +651,7 @@ jobs:
 
         | 架构版本 | 支持系统 | 适用设备 | 下载文件 |
         |---------|---------|---------|---------|
-        **Intel (x86_64)** | macOS 10.15+ | Intel 芯片 Mac | `QuickLauncher-Intel.dmg/zip` |
+        **Intel (x86_64)** | macOS 10.13+ | Intel 芯片 Mac | `QuickLauncher-Intel.dmg/zip` |
         **Apple Silicon (ARM64)** | macOS 11.0+ | M123 芯片 Mac | `QuickLauncher-ARM64.dmg/zip` |
 
         ## 🔧 安装方法

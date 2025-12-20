@@ -66,7 +66,7 @@ jobs:
 
     - name: Create Artifacts
       run: |
-        # Find and copy the built app
+        # Find and work directly with the built app (no copy to avoid du calculation issues)
         APP_PATH=$(find DerivedData-${{ matrix.config_name }} -name "QuickLauncher.app" -type d | head -1)
         if [ -z "$APP_PATH" ]; then
           echo "❌ No app bundle found"
@@ -75,26 +75,18 @@ jobs:
         
         echo "📁 Found app at: $APP_PATH"
         APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
-        echo "📊 Builded app size: $APP_SIZE"
+        echo "📊 Built app size: $APP_SIZE"
         
         rm -rf CI-Artifacts
-
         mkdir -p CI-Artifacts
         
-        # Step 1: Copy and preserve original build
-        cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}-Original.app"
-        echo "📦 Original app copied"
-        
-        # Step 2: Create working copy for modifications
-        cp -R "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}-Original.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
-        
-        echo "🔧 Checking Framework structure in CI-Artifacts..."
-        FRAMEWORKS_DIR="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework"
+        echo "🔧 Checking Framework structure..."
+        FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks/QuickLauncherCore.framework"
         
         if [ ! -d "$FRAMEWORKS_DIR" ]; then
             echo "⚠️ No Frameworks directory found"
             echo "📁 Available Frameworks:"
-            ls -la "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/" || echo "No Frameworks directory"
+            ls -la "$APP_PATH/Contents/Frameworks/" || echo "No Frameworks directory"
             exit 0
         fi
 
@@ -145,6 +137,11 @@ jobs:
         echo "📋 Final Framework structure:"
         ls -la "$FRAMEWORKS_DIR"
         
+        # Record original size before any modifications
+        echo "🔍 Recording app size before modifications..."
+        ORIGINAL_SIZE=$(du -sh "$APP_PATH" | cut -f1)
+        echo "  Original app size: $ORIGINAL_SIZE"
+        
         # Detailed symlink verification
         echo "🔍 Detailed symlink verification:"
         if [ -L "$FRAMEWORKS_DIR/QuickLauncherCore" ]; then
@@ -194,27 +191,32 @@ jobs:
         done
         cd /Users/runner/work/QuickLauncher/QuickLauncher
         
-        # Step 3: Package after framework fixes (before library cleanup)
-        echo "📦 Creating post-framework-fix package..."
+        # Step 3: Package original app (before modifications)
+        echo "📦 Creating original package..."
         cd CI-Artifacts
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-PostFrameworkFix.tar.xz" "QuickLauncher-${{ matrix.config_name }}.app"
-        echo "  📊 Post-framework-fix package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-PostFrameworkFix.tar.xz" | cut -f1)"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+        echo "  📊 Original package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" | cut -f1)"
         cd ..
         
         echo "🧹 Running library cleanup script..."
         
         # Pre-cleanup size analysis
         echo "📊 Pre-cleanup analysis:"
-        APP_SIZE_BEFORE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
+        APP_SIZE_BEFORE=$(du -sh "$APP_PATH" | cut -f1)
         echo "  App size before cleanup: $APP_SIZE_BEFORE"
-        LIBS_SIZE_BEFORE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
-        echo "  Libraries size before cleanup: $LIBS_SIZE_BEFORE"
-        LIBS_COUNT_BEFORE=$(ls -1 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
-        echo "  Libraries count before cleanup: $LIBS_COUNT_BEFORE"
+        
+        echo "  🔍 Detailed library size analysis:"
+        echo "    Frameworks directory:"
+        du -sh "$APP_PATH/Contents/Frameworks/"
+        echo "    Individual libraries:"
+        du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | sort -hr
+        LIBS_SIZE_BEFORE=$(du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
+        LIBS_COUNT_BEFORE=$(ls -1 "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
+        echo "    Total libraries size: $LIBS_SIZE_BEFORE ($LIBS_COUNT_BEFORE files)"
         
         if [ -f "./scripts/clean-libs.sh" ]; then
           chmod +x ./scripts/clean-libs.sh
-          ./scripts/clean-libs.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+          ./scripts/clean-libs.sh "$APP_PATH"
           echo "✅ Library cleanup completed"
         else
           echo "⚠️ clean-libs.sh script not found"
@@ -222,36 +224,37 @@ jobs:
 
         # Post-cleanup size analysis
         echo "📊 Post-cleanup analysis:"
-        APP_SIZE_AFTER=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
+        APP_SIZE_AFTER=$(du -sh "$APP_PATH" | cut -f1)
         echo "  App size after cleanup: $APP_SIZE_AFTER"
-        LIBS_SIZE_AFTER=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
-        echo "  Libraries size after cleanup: $LIBS_SIZE_AFTER"
-        LIBS_COUNT_AFTER=$(ls -1 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
-        echo "  Libraries count after cleanup: $LIBS_COUNT_AFTER"
+        
+        echo "  🔍 Detailed library size analysis:"
+        echo "    Frameworks directory:"
+        du -sh "$APP_PATH/Contents/Frameworks/"
+        echo "    Individual libraries:"
+        du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | sort -hr
+        LIBS_SIZE_AFTER=$(du -sh "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | awk '{sum+=$1} END {print sum "B"}' || echo "0B")
+        LIBS_COUNT_AFTER=$(ls -1 "$APP_PATH/Contents/Frameworks/"*.dylib 2>/dev/null | wc -l)
+        echo "    Total libraries size: $LIBS_SIZE_AFTER ($LIBS_COUNT_AFTER files)"
         
         # Calculate size difference
         echo "📊 Size difference analysis:"
+        echo "  Original size: $ORIGINAL_SIZE"
+        echo "  Before cleanup: $APP_SIZE_BEFORE"
+        echo "  After cleanup: $APP_SIZE_AFTER"
         if [ "$APP_SIZE_BEFORE" != "$APP_SIZE_AFTER" ]; then
-            echo "  ⚠️ App size changed: $APP_SIZE_BEFORE -> $APP_SIZE_AFTER"
-            echo "  🔍 This indicates a potential symlink or filesystem issue"
+            echo "  ✅ Library cleanup effective: size reduced from $APP_SIZE_BEFORE to $APP_SIZE_AFTER"
         else
-            echo "  ✅ App size unchanged (expected)"
+            echo "  ⚠️ No size change detected"
         fi
         
         # Basic verification
-        [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
-        [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
+        [ -f "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
+        [ -x "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         
-        # Step 4: Create final packages
-        echo "📦 Creating final packages..."
+        # Step 4: Create final package
+        echo "📦 Creating final package..."
         cd CI-Artifacts
-        
-        # Package original build
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Original.app"
-        echo "  📊 Original package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" | cut -f1)"
-        
-        # Package final build
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "QuickLauncher-${{ matrix.config_name }}.app"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
         echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)"
         
         # Show all packages

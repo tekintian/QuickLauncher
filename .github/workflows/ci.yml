@@ -163,13 +163,13 @@ jobs:
         [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
         
-        # Optional detailed framework debug (only on failure or when needed)
-        if [ "${{ matrix.config_name }}" = "Intel" ]; then
-            echo "🔍 Running detailed framework debug..."
-            find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | head -1 | while read fw; do
-                ./scripts/debug-framework.sh "$fw"
-            done
-        fi
+        # # Optional detailed framework debug (only on failure or when needed)
+        # if [ "${{ matrix.config_name }}" = "Intel" ]; then
+        #     echo "🔍 Running detailed framework debug..."
+        #     find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | head -1 | while read fw; do
+        #         ./scripts/debug-framework.sh "$fw"
+        #     done
+        # fi
         
         # Show final app size
         APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)

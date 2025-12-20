@@ -42,7 +42,13 @@ jobs:
       run: |
         set -euo pipefail
         echo "📦 Installing dependencies..."
-        brew install xz
+        # brew install xz if not already installed
+        if ! command -v xz &> /dev/null; then
+          echo "🍺 Installing xz..."
+          brew install xz
+        else
+          echo "✅ xz is already installed"
+        fi
 
     - name: Build App
       run: |

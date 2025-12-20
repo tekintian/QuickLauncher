@@ -99,13 +99,14 @@ jobs:
         [ -f "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         
-        # Step 4: Create final package
+        # Step 4: Package the final app bundle
+        echo " moving $APP_PATH to CI-Artifacts/QuickLauncher.app "
+        mv $APP_PATH CI-Artifacts/QuickLauncher.app
         cd CI-Artifacts
-        echo "  📋 Packaging final app bundle: $APP_PATH"
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "../$APP_PATH"
+        echo "  📋 Packaging final app bundle: CI-Artifacts/QuickLauncher.app"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" QuickLauncher.app"
        
-        echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)"
-        
+        echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)" 
         # Show all packages
         echo "📋 All generated packages:"
         ls -lh *.tar.xz

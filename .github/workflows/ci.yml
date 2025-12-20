@@ -70,6 +70,12 @@ jobs:
         mkdir -p CI-Artifacts
         cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
+        # Fix Framework structure to avoid duplicate content
+        ./scripts/fix-frameworks.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        
+        # Clean unused libraries
+        ./scripts/clean-libs.sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        
         # Basic verification only
         [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1

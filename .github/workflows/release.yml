@@ -90,11 +90,14 @@ jobs:
           ONLY_ACTIVE_ARCH=NO \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          ENABLE_BITCODE=NO \
+          SWIFT_OPTIMIZATION_LEVEL=-O \
           -allowProvisioningUpdates \
           clean build
         
         # Copy Intel binary
-        cp "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
+        cp -r "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
         
         # Build ARM64 version for macOS 11.0 compatibility
         echo "🏗️ Building Apple Silicon (ARM64) version..."
@@ -107,11 +110,14 @@ jobs:
           ONLY_ACTIVE_ARCH=NO \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          ENABLE_BITCODE=NO \
+          SWIFT_OPTIMIZATION_LEVEL=-O \
           -allowProvisioningUpdates \
           clean build
         
         # Copy ARM64 binary
-        cp "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
+        cp -r "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
         
         # Verify binary compatibility
         echo "🔍 Checking Intel binary compatibility:"

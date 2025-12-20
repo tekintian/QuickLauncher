@@ -133,7 +133,7 @@ jobs:
         mkdir -p CI-Artifacts
         
         # Copy the built app
-        cp -r "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        cp -R "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
         # Ensure proper permissions
         chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"

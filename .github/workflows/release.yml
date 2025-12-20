@@ -110,31 +110,8 @@ jobs:
           -allowProvisioningUpdates \
           clean build
         
-        # Ensure Resources are properly linked after build
-        echo "🔗 Ensuring proper resource linking for Intel build..."
-        INTEL_APP_DIR="DerivedData-Intel/Build/Products/Release/QuickLauncher.app"
-        if [ -d "$INTEL_APP_DIR" ]; then
-          # Copy Assets.xcassets
-          if [ -d "QuickLauncher/Assets.xcassets" ]; then
-            mkdir -p "$INTEL_APP_DIR/Contents/Resources/"
-            cp -r QuickLauncher/Assets.xcassets "$INTEL_APP_DIR/Contents/Resources/"
-            echo "✅ Intel Assets.xcassets copied"
-          fi
-          
-          # Copy localization files
-          if [ -d "QuickLauncher" ]; then
-            mkdir -p "$INTEL_APP_DIR/Contents/Resources/"
-            cp -r QuickLauncher/*.lproj "$INTEL_APP_DIR/Contents/Resources/" 2>/dev/null || true
-            echo "✅ Intel localization files copied"
-          fi
-          
-          # Copy MainMenu.xib
-          if [ -f "QuickLauncher/MainMenu.xib" ]; then
-            mkdir -p "$INTEL_APP_DIR/Contents/Resources/"
-            cp QuickLauncher/MainMenu.xib "$INTEL_APP_DIR/Contents/Resources/"
-            echo "✅ Intel MainMenu.xib copied"
-          fi
-        fi
+        # NOTE: Xcode build already includes all compiled resources
+        # No manual resource copying needed - would corrupt the built app
         
         # Verify Intel build succeeded
         echo "🔍 Checking Intel build results..."
@@ -153,7 +130,7 @@ jobs:
           echo "✅ Intel build successful, copying app..."
           # Remove existing copy and copy fresh from build output
           rm -rf QuickLauncher-Intel.app
-          cp -r "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
+          cp -R "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
           
           # Ensure complete directory structure
           echo "🔧 Ensuring complete Intel app structure..."
@@ -210,29 +187,8 @@ jobs:
         
         # Ensure Resources are properly linked after build
         echo "🔗 Ensuring proper resource linking for ARM64 build..."
-        ARM64_APP_DIR="DerivedData-ARM64/Build/Products/Release/QuickLauncher.app"
-        if [ -d "$ARM64_APP_DIR" ]; then
-          # Copy Assets.xcassets
-          if [ -d "QuickLauncher/Assets.xcassets" ]; then
-            mkdir -p "$ARM64_APP_DIR/Contents/Resources/"
-            cp -r QuickLauncher/Assets.xcassets "$ARM64_APP_DIR/Contents/Resources/"
-            echo "✅ ARM64 Assets.xcassets copied"
-          fi
-          
-          # Copy localization files
-          if [ -d "QuickLauncher" ]; then
-            mkdir -p "$ARM64_APP_DIR/Contents/Resources/"
-            cp -r QuickLauncher/*.lproj "$ARM64_APP_DIR/Contents/Resources/" 2>/dev/null || true
-            echo "✅ ARM64 localization files copied"
-          fi
-          
-          # Copy MainMenu.xib
-          if [ -f "QuickLauncher/MainMenu.xib" ]; then
-            mkdir -p "$ARM64_APP_DIR/Contents/Resources/"
-            cp QuickLauncher/MainMenu.xib "$ARM64_APP_DIR/Contents/Resources/"
-            echo "✅ ARM64 MainMenu.xib copied"
-          fi
-        fi
+        # NOTE: Xcode build already includes all compiled resources
+        # No manual resource copying needed - would corrupt the built app
         
         # Verify ARM64 build succeeded
         echo "🔍 Checking ARM64 build results..."
@@ -251,7 +207,7 @@ jobs:
           echo "✅ ARM64 build successful, copying app..."
           # Remove existing copy and copy fresh from build output
           rm -rf QuickLauncher-ARM64.app
-          cp -r "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
+          cp -R "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
           
           # Ensure complete directory structure
           echo "🔧 Ensuring complete ARM64 app structure..."
@@ -466,7 +422,7 @@ jobs:
           ls -la QuickLauncher-ARM64.app/
           find DerivedData-ARM64/Build/Products/Release/ -name "*.app" -type d
           echo "🔄 Re-copying ARM64 app from build output..."
-          cp -r DerivedData-ARM64/Build/Products/Release/QuickLauncher.app QuickLauncher-ARM64.app
+          cp -R DerivedData-ARM64/Build/Products/Release/QuickLauncher.app QuickLauncher-ARM64.app
         fi
         
         # Ensure the app has correct permissions and structure

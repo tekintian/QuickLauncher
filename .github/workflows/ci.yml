@@ -82,6 +82,7 @@ jobs:
         rm -rf Resources
         rm -rf QuickLauncherCore
         rm -rf Versions/Current
+        echo "$FRAMEWORKS_DIR" > test.txt
         echo "  🔗 Creating symlinks..."
         ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
         ln -sf Versions/A/Resources Resources
@@ -101,26 +102,23 @@ jobs:
         #   exit 1
         # fi
 
-
         mkdir -p CI-Artifacts
         cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
-        echo "🔍 Checking Framework structure BEFORE fix:"
-        if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" ]; then
-          find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read fw; do
-            fw_name=$(basename "$fw" .framework)
-            echo "  📦 Framework: $fw_name"
-            if [ -f "$fw/$fw_name" ] && [ ! -L "$fw/$fw_name" ]; then
-              echo "    ❌ $fw_name is a FILE (should be symlink)"
-            elif [ -L "$fw/$fw_name" ]; then
-              echo "    ✅ $fw_name is already a symlink"
-            else
-              echo "    ⚠️ $fw_name not found"
-            fi
-          done
-        fi
-        
-       
+        # echo "🔍 Checking Framework structure BEFORE fix:"
+        # if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" ]; then
+        #   find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read fw; do
+        #     fw_name=$(basename "$fw" .framework)
+        #     echo "  📦 Framework: $fw_name"
+        #     if [ -f "$fw/$fw_name" ] && [ ! -L "$fw/$fw_name" ]; then
+        #       echo "    ❌ $fw_name is a FILE (should be symlink)"
+        #     elif [ -L "$fw/$fw_name" ]; then
+        #       echo "    ✅ $fw_name is already a symlink"
+        #     else
+        #       echo "    ⚠️ $fw_name not found"
+        #     fi
+        #   done
+        # fi
         
         echo "🧹 Running library cleanup script..."
         if [ -f "./scripts/clean-libs.sh" ]; then
@@ -162,14 +160,6 @@ jobs:
         # Basic verification
         [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
-        
-        # # Optional detailed framework debug (only on failure or when needed)
-        # if [ "${{ matrix.config_name }}" = "Intel" ]; then
-        #     echo "🔍 Running detailed framework debug..."
-        #     find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | head -1 | while read fw; do
-        #         ./scripts/debug-framework.sh "$fw"
-        #     done
-        # fi
         
         # Show final app size
         APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)

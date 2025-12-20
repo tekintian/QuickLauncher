@@ -34,29 +34,56 @@ else
     echo "   ❌ 主app LSUIElement格式不正确"
 fi
 
-# 3. 检查Framework结构
+# 3. 检查Framework结构（关键：避免重复文件）
 echo ""
 echo "3. 检查Framework结构："
 FRAMEWORK_DIR="$LOCAL_APP/Contents/Frameworks/QuickLauncherCore.framework"
+
 if [ -L "$FRAMEWORK_DIR/Versions/Current" ]; then
     CURRENT_TARGET=$(readlink "$FRAMEWORK_DIR/Versions/Current")
-    echo "   ✅ Versions/Current -> $CURRENT_TARGET"
+    if [ "$CURRENT_TARGET" = "A" ]; then
+        echo "   ✅ Versions/Current -> A (正确)"
+    else
+        echo "   ❌ Versions/Current -> $CURRENT_TARGET (应该是 A)"
+    fi
 else
     echo "   ❌ Versions/Current 符号链接缺失"
 fi
 
 if [ -L "$FRAMEWORK_DIR/QuickLauncherCore" ]; then
     BINARY_TARGET=$(readlink "$FRAMEWORK_DIR/QuickLauncherCore")
-    echo "   ✅ QuickLauncherCore -> $BINARY_TARGET"
+    if [ "$BINARY_TARGET" = "Versions/Current/QuickLauncherCore" ]; then
+        echo "   ✅ QuickLauncherCore -> Versions/Current/QuickLauncherCore (正确)"
+    else
+        echo "   ❌ QuickLauncherCore -> $BINARY_TARGET (应该是 Versions/Current/QuickLauncherCore)"
+    fi
 else
     echo "   ❌ QuickLauncherCore 符号链接缺失"
 fi
 
 if [ -L "$FRAMEWORK_DIR/Resources" ]; then
     RESOURCES_TARGET=$(readlink "$FRAMEWORK_DIR/Resources")
-    echo "   ✅ Resources -> $RESOURCES_TARGET"
+    if [ "$RESOURCES_TARGET" = "Versions/Current/Resources" ]; then
+        echo "   ✅ Resources -> Versions/Current/Resources (正确)"
+    else
+        echo "   ❌ Resources -> $RESOURCES_TARGET (应该是 Versions/Current/Resources)"
+    fi
 else
     echo "   ❌ Resources 符号链接缺失"
+fi
+
+# 关键检查：确保没有重复文件
+echo "   检查重复文件："
+if [ -f "$FRAMEWORK_DIR/QuickLauncherCore" ] && [ ! -L "$FRAMEWORK_DIR/QuickLauncherCore" ]; then
+    echo "   ❌ 发现重复的QuickLauncherCore文件 (应该是符号链接)"
+else
+    echo "   ✅ 没有重复的QuickLauncherCore文件"
+fi
+
+if [ -d "$FRAMEWORK_DIR/Resources" ] && [ ! -L "$FRAMEWORK_DIR/Resources" ]; then
+    echo "   ❌ 发现重复的Resources目录 (应该是符号链接)"
+else
+    echo "   ✅ 没有重复的Resources目录"
 fi
 
 # 4. 检查扩展Info.plist

@@ -6,13 +6,16 @@
 
 ## 主要修复
 
-### 1. Framework符号链接结构
-**问题**: CI构建缺少正确的framework符号链接
+### 1. Framework符号链接结构（关键修复）
+**问题**: CI构建存在重复文件，体积增大，符号链接指向错误
 **修复**: 
-- 确保 `Versions/A/Resources` 目录结构正确
-- 创建 `Current -> A` 符号链接
-- 创建顶层符号链接 `QuickLauncherCore -> Versions/Current/QuickLauncherCore`
-- 创建 `Resources -> Versions/Current/Resources`
+- **移除重复文件**: 确保顶层只有符号链接，所有实际文件只在Versions/A/中
+- **正确符号链接指向**: 
+  - `Current -> A` (不是其他路径)
+  - `QuickLauncherCore -> Versions/Current/QuickLauncherCore`
+  - `Resources -> Versions/Current/Resources`
+- **严格验证**: 检查符号链接目标是否正确，防止重复文件
+- **体积优化**: 避免在顶层和Versions/A/同时存储相同文件
 
 ### 2. Bundle ID分配
 **问题**: CI错误地将所有组件的Bundle ID设置为主app的ID

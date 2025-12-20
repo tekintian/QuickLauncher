@@ -428,46 +428,97 @@ jobs:
           # Create required symbolic links for framework structure
           echo "    Creating required symbolic links..."
           
-          # Ensure Versions/A/Resources directory exists (match local structure)
-          if [ -d "$framework/Versions/A" ] && [ ! -d "$framework/Versions/A/Resources" ]; then
-            if [ -d "$framework/Resources" ]; then
-              echo "      Moving Resources to Versions/A/Resources"
+          # Remove any duplicate files in top-level that should only exist in Versions/A/
+          # This ensures we only have files in Versions/A and symlinks at top-level
+          echo "      Removing duplicate top-level files..."
+          
+          # Remove duplicate QuickLauncherCore binary if it exists as a file (not symlink)
+          if [ -f "$framework/$FRAMEWORK_NAME" ] && [ ! -L "$framework/$FRAMEWORK_NAME" ]; then
+            echo "      Removing duplicate binary: $framework/$FRAMEWORK_NAME"
+            rm "$framework/$FRAMEWORK_NAME"
+          fi
+          
+          # Remove duplicate Resources directory if it exists as a directory (not symlink)
+          if [ -d "$framework/Resources" ] && [ ! -L "$framework/Resources" ]; then
+            echo "      Moving Resources to Versions/A/ before creating symlink"
+            if [ -d "$framework/Versions/A" ] && [ ! -d "$framework/Versions/A/Resources" ]; then
               mv "$framework/Resources" "$framework/Versions/A/Resources"
+            else
+              echo "      Warning: Versions/A/Resources already exists, removing top-level Resources"
+              rm -rf "$framework/Resources"
             fi
           fi
           
-          # Create Current -> A symlink if missing
-          if [ ! -L "$framework/Versions/Current" ]; then
-            if [ -d "$framework/Versions/A" ]; then
-              cd "$framework/Versions"
-              ln -sf A Current
-              echo "      Created Current -> A symlink"
-              cd - >/dev/null
-            else
-              echo "      Warning: Versions/A directory not found"
+          # Ensure Versions/A directory structure exists with all content
+          if [ -d "$framework/Versions/A" ]; then
+            echo "      Verifying Versions/A structure..."
+            
+            # Ensure Versions/A contains the framework binary
+            if [ ! -f "$framework/Versions/A/$FRAMEWORK_NAME" ]; then
+              echo "      Warning: Framework binary not found in Versions/A/"
+            fi
+            
+            # Ensure Versions/A/Resources directory exists
+            if [ ! -d "$framework/Versions/A/Resources" ]; then
+              echo "      Creating Versions/A/Resources directory"
+              mkdir -p "$framework/Versions/A/Resources"
             fi
           else
-            echo "      Current symlink already exists"
+            echo "      Error: Versions/A directory missing"
+            exit 1
           fi
           
-          # Create top-level symlinks if missing
-          if [ ! -L "$framework/$FRAMEWORK_NAME" ]; then
-            cd "$framework"
+          # Create Current -> A symlink (must point to A)
+          cd "$framework/Versions"
+          if [ ! -L "Current" ]; then
+            ln -sf A Current
+            echo "      Created Current -> A symlink"
+          else
+            # Verify existing symlink points to A
+            CURRENT_TARGET=$(readlink Current 2>/dev/null || echo "")
+            if [ "$CURRENT_TARGET" != "A" ]; then
+              echo "      Fixing Current symlink (was: $CURRENT_TARGET, should be: A)"
+              rm -f Current
+              ln -sf A Current
+            else
+              echo "      Current -> A symlink already correct"
+            fi
+          fi
+          cd - >/dev/null
+          
+          # Create top-level binary symlink (must point to Versions/Current/$FRAMEWORK_NAME)
+          cd "$framework"
+          if [ ! -L "$FRAMEWORK_NAME" ]; then
             ln -sf Versions/Current/$FRAMEWORK_NAME $FRAMEWORK_NAME
             echo "      Created $FRAMEWORK_NAME -> Versions/Current/$FRAMEWORK_NAME symlink"
-            cd - >/dev/null
           else
-            echo "      $FRAMEWORK_NAME symlink already exists"
+            # Verify existing symlink points correctly
+            BINARY_TARGET=$(readlink $FRAMEWORK_NAME 2>/dev/null || echo "")
+            if [ "$BINARY_TARGET" != "Versions/Current/$FRAMEWORK_NAME" ]; then
+              echo "      Fixing $FRAMEWORK_NAME symlink (was: $BINARY_TARGET, should be: Versions/Current/$FRAMEWORK_NAME)"
+              rm -f $FRAMEWORK_NAME
+              ln -sf Versions/Current/$FRAMEWORK_NAME $FRAMEWORK_NAME
+            else
+              echo "      $FRAMEWORK_NAME symlink already correct"
+            fi
           fi
           
-          if [ ! -L "$framework/Resources" ]; then
-            cd "$framework"
+          # Create top-level Resources symlink (must point to Versions/Current/Resources)
+          if [ ! -L "Resources" ]; then
             ln -sf Versions/Current/Resources Resources
             echo "      Created Resources -> Versions/Current/Resources symlink"
-            cd - >/dev/null
           else
-            echo "      Resources symlink already exists"
+            # Verify existing symlink points correctly
+            RESOURCES_TARGET=$(readlink Resources 2>/dev/null || echo "")
+            if [ "$RESOURCES_TARGET" != "Versions/Current/Resources" ]; then
+              echo "      Fixing Resources symlink (was: $RESOURCES_TARGET, should be: Versions/Current/Resources)"
+              rm -f Resources
+              ln -sf Versions/Current/Resources Resources
+            else
+              echo "      Resources symlink already correct"
+            fi
           fi
+          cd - >/dev/null
           
           # Fix framework library ID for proper dylib loading
           FRAMEWORK_BINARY="$framework/Versions/A/$FRAMEWORK_NAME"
@@ -475,6 +526,21 @@ jobs:
             echo "    Fixing framework library ID for $FRAMEWORK_NAME"
             install_name_tool -id "@rpath/$FRAMEWORK_NAME.framework/Versions/A/$FRAMEWORK_NAME" "$FRAMEWORK_BINARY" 2>/dev/null || echo "    Library ID already correct"
           fi
+          
+          # Verify no duplicate files exist (only symlinks should be at top level)
+          echo "    Verifying no duplicate files..."
+          FRAMEWORK_SIZE=$(du -sh "$framework" | cut -f1)
+          echo "      Framework total size: $FRAMEWORK_SIZE"
+          
+          # Check that top-level items are symlinks, not files
+          TOP_LEVEL_ITEMS=$(find "$framework" -maxdepth 1 -name "$FRAMEWORK_NAME" -o -name "Resources")
+          for item in $TOP_LEVEL_ITEMS; do
+            if [ -f "$item" ] && [ ! -L "$item" ]; then
+              echo "      ❌ Found duplicate file: $(basename "$item") (should be symlink)"
+            elif [ -L "$item" ]; then
+              echo "      ✅ $(basename "$item") is correctly a symlink"
+            fi
+          done
           
           # Sign the framework
           echo "  Signing framework: $(basename "$framework")"
@@ -511,29 +577,52 @@ jobs:
           echo "🔍 Verifying Framework structure..."
           FRAMEWORK_DIR="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework"
           
-          # Check symbolic links
+          # Check symbolic links and their targets
           if [ -L "$FRAMEWORK_DIR/Versions/Current" ]; then
-            echo "✅ Versions/Current symlink exists"
             CURRENT_LINK_TARGET=$(readlink "$FRAMEWORK_DIR/Versions/Current")
-            echo "📋 Current -> $CURRENT_LINK_TARGET"
+            if [ "$CURRENT_LINK_TARGET" = "A" ]; then
+              echo "✅ Versions/Current -> A (correct)"
+            else
+              echo "❌ Versions/Current -> $CURRENT_LINK_TARGET (should be A)"
+            fi
           else
             echo "❌ Versions/Current symlink missing"
           fi
           
           if [ -L "$FRAMEWORK_DIR/QuickLauncherCore" ]; then
-            echo "✅ QuickLauncherCore symlink exists"
             BINARY_LINK_TARGET=$(readlink "$FRAMEWORK_DIR/QuickLauncherCore")
-            echo "📋 QuickLauncherCore -> $BINARY_LINK_TARGET"
+            if [ "$BINARY_LINK_TARGET" = "Versions/Current/QuickLauncherCore" ]; then
+              echo "✅ QuickLauncherCore -> Versions/Current/QuickLauncherCore (correct)"
+            else
+              echo "❌ QuickLauncherCore -> $BINARY_LINK_TARGET (should be Versions/Current/QuickLauncherCore)"
+            fi
           else
             echo "❌ QuickLauncherCore symlink missing"
           fi
           
           if [ -L "$FRAMEWORK_DIR/Resources" ]; then
-            echo "✅ Resources symlink exists"
             RESOURCES_LINK_TARGET=$(readlink "$FRAMEWORK_DIR/Resources")
-            echo "📋 Resources -> $RESOURCES_LINK_TARGET"
+            if [ "$RESOURCES_LINK_TARGET" = "Versions/Current/Resources" ]; then
+              echo "✅ Resources -> Versions/Current/Resources (correct)"
+            else
+              echo "❌ Resources -> $RESOURCES_LINK_TARGET (should be Versions/Current/Resources)"
+            fi
           else
             echo "❌ Resources symlink missing"
+          fi
+          
+          # Check for duplicate files
+          echo "  Checking for duplicate files..."
+          if [ -f "$FRAMEWORK_DIR/QuickLauncherCore" ] && [ ! -L "$FRAMEWORK_DIR/QuickLauncherCore" ]; then
+            echo "❌ Duplicate QuickLauncherCore file found (should be symlink only)"
+          else
+            echo "✅ No duplicate QuickLauncherCore file"
+          fi
+          
+          if [ -d "$FRAMEWORK_DIR/Resources" ] && [ ! -L "$FRAMEWORK_DIR/Resources" ]; then
+            echo "❌ Duplicate Resources directory found (should be symlink only)"
+          else
+            echo "✅ No duplicate Resources directory"
           fi
           
           # Check Versions/A structure

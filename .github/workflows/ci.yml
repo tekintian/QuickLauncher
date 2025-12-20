@@ -77,14 +77,18 @@ jobs:
         
         if [ ! -d "$FRAMEWORKS_DIR" ]; then
             echo "⚠️ No Frameworks directory found"
+            echo "📁 Available Frameworks:"
+            ls -la "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/" || echo "No Frameworks directory"
             exit 0
         fi
 
+        echo "📁 Framework directory exists: $FRAMEWORKS_DIR"
+        echo "📋 Before fix - Framework contents:"
+        ls -la "$FRAMEWORKS_DIR"
+
         cd "$FRAMEWORKS_DIR"
         echo "  🗑️ Removing top-level duplicate files/directories..."
-        rm -rf Resources
-        rm -rf QuickLauncherCore
-        rm -rf Versions/Current
+        rm -rf Resources QuickLauncherCore Versions/Current
         echo "  🔗 Creating symlinks..."
         ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
         ln -sf Versions/A/Resources Resources
@@ -92,10 +96,10 @@ jobs:
         ln -sf A Current
         echo "  ✅ Symlinks created."
         cd /Users/runner/work/QuickLauncher/QuickLauncher
-        echo "✅ Framework structure fix completed"
         
-        # Clean up test files that might have been added during debugging
-        rm -f CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework/test*.txt
+        echo "📋 After fix - Framework contents:"
+        ls -la "$FRAMEWORKS_DIR"
+        echo "✅ Framework structure fix completed"
         
         echo "🧹 Running library cleanup script..."
         if [ -f "./scripts/clean-libs.sh" ]; then

@@ -201,9 +201,10 @@ jobs:
         # Step 3: Package original app (before modifications)
         echo "📦 Creating original package..."
         cd CI-Artifacts
-        APP_DIR=$(dirname "$APP_PATH")
-        APP_NAME=$(basename "$APP_PATH")
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" -C "$APP_DIR" "$APP_NAME"
+        # Create a temporary copy with proper name
+        cp -R "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Original.app"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Original.app"
+        rm -rf "QuickLauncher-${{ matrix.config_name }}-Original.app"
         echo "  📊 Original package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" | cut -f1)"
         cd ..
         
@@ -263,7 +264,10 @@ jobs:
         # Step 4: Create final package
         echo "📦 Creating final package..."
         cd CI-Artifacts
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" -C "$APP_DIR" "$APP_NAME"
+        # Create a temporary copy with proper name
+        cp -R "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Final.app"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Final.app"
+        rm -rf "QuickLauncher-${{ matrix.config_name }}-Final.app"
         echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)"
         
         # Show all packages

@@ -106,21 +106,6 @@ jobs:
         mkdir -p CI-Artifacts
         cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
-        # echo "🔍 Checking Framework structure BEFORE fix:"
-        # if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" ]; then
-        #   find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read fw; do
-        #     fw_name=$(basename "$fw" .framework)
-        #     echo "  📦 Framework: $fw_name"
-        #     if [ -f "$fw/$fw_name" ] && [ ! -L "$fw/$fw_name" ]; then
-        #       echo "    ❌ $fw_name is a FILE (should be symlink)"
-        #     elif [ -L "$fw/$fw_name" ]; then
-        #       echo "    ✅ $fw_name is already a symlink"
-        #     else
-        #       echo "    ⚠️ $fw_name not found"
-        #     fi
-        #   done
-        # fi
-        
         echo "🧹 Running library cleanup script..."
         if [ -f "./scripts/clean-libs.sh" ]; then
           chmod +x ./scripts/clean-libs.sh
@@ -129,35 +114,7 @@ jobs:
         else
           echo "⚠️ clean-libs.sh script not found"
         fi
-        
-        # Verify Framework structure
-        if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" ]; then
-            echo "🔍 Verifying Framework structure..."
-            find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks" -name "*.framework" -type d | while read fw; do
-                fw_name=$(basename "$fw" .framework)
-                echo "  📦 Framework: $fw_name"
-                
-                # Check key symlinks
-                if [ -L "$fw/Versions/Current" ]; then
-                    echo "    ✅ Versions/Current -> $(readlink $fw/Versions/Current)"
-                else
-                    echo "    ❌ Versions/Current symlink missing"
-                fi
-                
-                if [ -L "$fw/$fw_name" ]; then
-                    echo "    ✅ $fw_name -> $(readlink $fw/$fw_name)"
-                else
-                    echo "    ❌ $fw_name symlink missing"
-                fi
-                
-                if [ -L "$fw/Resources" ]; then
-                    echo "    ✅ Resources -> $(readlink $fw/Resources)"
-                else
-                    echo "    ❌ Resources symlink missing"
-                fi
-            done
-        fi
-        
+
         # Basic verification
         [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ] || exit 1
@@ -165,6 +122,8 @@ jobs:
         # Show final app size
         APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
         echo "📊 Final app size: $APP_SIZE"
+
+        echo "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app $APP_SIZE" > test_b.txt
         
         echo "✅ ${{ matrix.config_name }} build completed"
 

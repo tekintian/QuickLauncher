@@ -34,6 +34,7 @@ cd Versions
 ln -sf A Current
 echo "  ✅ Symlinks created."
 
-cd $PWD
+cd $APP_BUNDLE
+cd ../
 
 echo "✅ Framework structure fix completed"

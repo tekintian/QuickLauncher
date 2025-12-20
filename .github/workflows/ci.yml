@@ -68,7 +68,11 @@ jobs:
         fi
         
         echo "📁 Found app at: $APP_PATH"
+        APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
+        echo "📊 Builded app size: $APP_SIZE"
         
+        rm -rf CI-Artifacts
+
         mkdir -p CI-Artifacts
         cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         

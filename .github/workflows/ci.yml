@@ -88,10 +88,9 @@ jobs:
         cd Versions
         ln -sf A Current
         echo "  ✅ Symlinks created."
-
-        cd $PWD
+        cd /Users/runner/work/QuickLauncher/QuickLauncher
         echo "✅ Framework structure fix completed"
-        
+
         # echo "🔧 Running Framework fix script..."
         # if [ -f "./scripts/tiny-fw.sh" ]; then
         #   chmod +x ./scripts/tiny-fw.sh

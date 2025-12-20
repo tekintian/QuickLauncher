@@ -68,10 +68,13 @@ jobs:
         fi
         
         echo "📁 Found app at: $APP_PATH"
-
-        FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks/QuickLauncherCore.framework"
-        echo "🔧 Fixing Framework structure in $FRAMEWORKS_DIR..."
-
+        
+        mkdir -p CI-Artifacts
+        cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        
+        echo "🔧 Fixing Framework structure in CI-Artifacts..."
+        FRAMEWORKS_DIR="CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework"
+        
         if [ ! -d "$FRAMEWORKS_DIR" ]; then
             echo "⚠️ No Frameworks directory found"
             exit 0
@@ -82,29 +85,17 @@ jobs:
         rm -rf Resources
         rm -rf QuickLauncherCore
         rm -rf Versions/Current
-        echo "$FRAMEWORKS_DIR" > test.txt
         echo "  🔗 Creating symlinks..."
         ln -sf Versions/A/QuickLauncherCore QuickLauncherCore
         ln -sf Versions/A/Resources Resources
         cd Versions
         ln -sf A Current
         echo "  ✅ Symlinks created."
-        echo "$PWD" > test_a.txt
         cd /Users/runner/work/QuickLauncher/QuickLauncher
         echo "✅ Framework structure fix completed"
-
-        # echo "🔧 Running Framework fix script..."
-        # if [ -f "./scripts/tiny-fw.sh" ]; then
-        #   chmod +x ./scripts/tiny-fw.sh
-        #   ./scripts/tiny-fw.sh $APP_PATH"
-        #   echo "✅ Framework fix script completed"
-        # else
-        #   echo "❌ tiny-fw.sh script not found"
-        #   exit 1
-        # fi
-
-        mkdir -p CI-Artifacts
-        cp -R "$APP_PATH" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        
+        # Clean up test files that might have been added during debugging
+        rm -f CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Frameworks/QuickLauncherCore.framework/test*.txt
         
         echo "🧹 Running library cleanup script..."
         if [ -f "./scripts/clean-libs.sh" ]; then
@@ -122,8 +113,6 @@ jobs:
         # Show final app size
         APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
         echo "📊 Final app size: $APP_SIZE"
-
-        echo "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app $APP_SIZE" > test_b.txt
         
         echo "✅ ${{ matrix.config_name }} build completed"
 

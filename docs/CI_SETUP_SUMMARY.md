@@ -26,6 +26,9 @@
 - ✅ **代码检查**：基本语法和结构验证
 - ✅ **缓存优化**：Swift Package Manager 和构建缓存
 - ✅ **权限检查**：脚本可执行权限验证
+- ✅ **完整应用包**：包含资源文件、本地化、图标等完整组件
+- ✅ **代码签名**：自签名确保 macOS 兼容性和可启动性
+- ✅ **完整性验证**：全面的 bundle 结构和签名验证
 
 ### 发布流程 (`release.yml`)
 - ✅ **自动构建**：Intel 和 ARM64 版本
@@ -296,6 +299,24 @@ graph TB
    - 检查开发者证书配置
    - 验证 Apple ID 和 Team ID
    - 确认证书有效期
+
+4. **"应用已损坏或不完整" (CI Build Issue)**
+   - **原因**: CI 构建缺少必要的资源文件和代码签名
+   - **解决方案**: CI workflow 已修复，现在包含：
+     - ✅ 完整的资源文件复制（Assets.xcassets、本地化文件）
+     - ✅ 自签名确保 macOS 兼容性
+     - ✅ 完整性验证和结构检查
+   - **验证方法**: 
+     ```bash
+     # 检查 app bundle 完整性
+     codesign --verify --verbose QuickLauncher-Intel.app
+     
+     # 检查资源文件
+     ls -la QuickLauncher-Intel.app/Contents/Resources/
+     
+     # 检查签名状态
+     spctl -a -vv QuickLauncher-Intel.app
+     ```
 
 ### 调试命令
 

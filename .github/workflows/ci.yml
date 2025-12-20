@@ -63,6 +63,8 @@ jobs:
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO
+        # tar the build output for reference
+        tar -cJf build-output-${{ matrix.config_name }}.tar.xz DerivedData-${{ matrix.config_name }}/Build/Products/Release/
 
     - name: Create Artifacts
       run: |
@@ -79,6 +81,8 @@ jobs:
         
         rm -rf CI-Artifacts
         mkdir -p CI-Artifacts
+        # Save build output tar for reference
+        mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/build-output-${{ matrix.config_name }}.tar.xz
         
         echo "🔧 Checking Framework structure..."
         FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks/QuickLauncherCore.framework"

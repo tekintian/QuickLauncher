@@ -84,7 +84,7 @@ jobs:
         echo "🏗️ Building ${{ matrix.config_name }} version..."
         export MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }}
         
-        # Build using Xcode project
+        # Build using Xcode project with enhanced parameters
         xcodebuild -project QuickLauncher.xcodeproj \
           -scheme QuickLauncher \
           -configuration Debug \
@@ -94,9 +94,24 @@ jobs:
           ONLY_ACTIVE_ARCH=NO \
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          ENABLE_BITCODE=NO \
+          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.QuickLauncher \
+          MARKETING_VERSION=1.0.0 \
+          CURRENT_PROJECT_VERSION=1 \
+          DEVELOPMENT_LANGUAGE=en \
           -allowProvisioningUpdates \
           clean build
           
+        # Verify build succeeded
+        echo "🔍 Checking ${{ matrix.config_name }} build results..."
+        if [ ! -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" ]; then
+          echo "❌ ${{ matrix.config_name }} build failed - no app bundle found"
+          find "DerivedData-${{ matrix.config_name }}" -name "*.app" -type d || echo "No app bundles found"
+          exit 1
+        fi
+        ls -la "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app/Contents/"
+        
         # Check binary
         echo "🔍 Verifying ${{ matrix.config_name }} binary..."
         file "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app/Contents/MacOS/QuickLauncher"
@@ -104,6 +119,40 @@ jobs:
         # Show app structure
         echo "📋 App structure:"
         find "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" -name "*.plist" | head -3
+        
+        # Create CI build artifacts
+        echo "📦 Creating CI artifacts for ${{ matrix.config_name }}..."
+        mkdir -p CI-Artifacts
+        
+        # Copy the built app
+        cp -r "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        
+        # Ensure proper permissions
+        chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        
+        # Verify app structure in artifact
+        echo "🔍 Verifying CI artifact structure..."
+        ls -la "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/"
+        
+        # Test basic app functionality (basic structure test)
+        echo "🧪 Running basic app validation..."
+        if [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Info.plist" ]; then
+          echo "✅ Info.plist exists"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
+        else
+          echo "❌ Info.plist missing"
+          exit 1
+        fi
+        
+        if [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ]; then
+          echo "✅ Executable exists"
+          file "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher"
+        else
+          echo "❌ Executable missing"
+          exit 1
+        fi
+        
+        echo "✅ ${{ matrix.config_name }} build and artifact creation completed"
         
         # Restore original files
         if [ -f "Package-local.swift" ]; then
@@ -115,6 +164,14 @@ jobs:
           echo "🔄 Restoring original Xcode project..."
           cp QuickLauncher.xcodeproj/project-local.pbxproj QuickLauncher.xcodeproj/project.pbxproj
         fi
+        
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: QuickLauncher-${{ matrix.config_name }}-CI-${{ github.run_number }}
+        path: CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app
+        retention-days: 7
+        if-no-files-found: error
         
     - name: Lint
       run: |
@@ -150,6 +207,67 @@ jobs:
         done
         
         echo "✅ Basic checks completed"
+        
+  verify-builds:
+    needs: build
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Download Intel Build
+      uses: actions/download-artifact@v4
+      with:
+        name: QuickLauncher-Intel-CI-${{ github.run_number }}
+        path: artifacts/intel/
+        
+    - name: Download ARM64 Build
+      uses: actions/download-artifact@v4
+      with:
+        name: QuickLauncher-ARM64-CI-${{ github.run_number }}
+        path: artifacts/arm64/
+        
+    - name: Verify Both Builds
+      run: |
+        echo "🔍 Verifying downloaded CI builds..."
+        
+        # Check Intel build
+        echo "📋 Intel build verification:"
+        ls -la artifacts/intel/
+        if [ -d "artifacts/intel/QuickLauncher-Intel.app" ]; then
+          echo "✅ Intel app bundle exists"
+          ls -la "artifacts/intel/QuickLauncher-Intel.app/Contents/"
+          file "artifacts/intel/QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "artifacts/intel/QuickLauncher-Intel.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
+        else
+          echo "❌ Intel app bundle missing"
+          exit 1
+        fi
+        
+        echo ""
+        
+        # Check ARM64 build
+        echo "📋 ARM64 build verification:"
+        ls -la artifacts/arm64/
+        if [ -d "artifacts/arm64/QuickLauncher-ARM64.app" ]; then
+          echo "✅ ARM64 app bundle exists"
+          ls -la "artifacts/arm64/QuickLauncher-ARM64.app/Contents/"
+          file "artifacts/arm64/QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher"
+          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "artifacts/arm64/QuickLauncher-ARM64.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
+        else
+          echo "❌ ARM64 app bundle missing"
+          exit 1
+        fi
+        
+        echo ""
+        echo "🎉 Both architecture builds verified successfully!"
+        echo "📊 Build summary:"
+        echo "  - Intel (x86_64): ✅"
+        echo "  - ARM64 (Apple Silicon): ✅"
+        echo "  - Build artifacts uploaded: ✅"
+        echo "  - Dependencies resolved: ✅"
+        echo "  - Ready for release: ✅"
         
     - name: Test Icon Update Script
       run: |

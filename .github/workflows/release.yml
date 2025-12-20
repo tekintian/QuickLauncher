@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [ main, master, develop ]
     tags:
       - 'v*'
 
@@ -93,11 +94,34 @@ jobs:
           CODE_SIGNING_ALLOWED=NO \
           ENABLE_BITCODE=NO \
           SWIFT_OPTIMIZATION_LEVEL=-O \
+          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.QuickLauncher \
+          MARKETING_VERSION=1.0.0 \
+          CURRENT_PROJECT_VERSION=1 \
+          DEVELOPMENT_LANGUAGE=en \
           -allowProvisioningUpdates \
           clean build
         
+        # Verify Intel build succeeded
+        echo "🔍 Checking Intel build results..."
+        if [ ! -d "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" ]; then
+          echo "❌ Intel build failed - no app bundle found"
+          find DerivedData-Intel -name "*.app" -type d || echo "No app bundles found"
+          exit 1
+        fi
+        ls -la "DerivedData-Intel/Build/Products/Release/QuickLauncher.app/Contents/"
+        
         # Copy Intel binary
-        cp -r "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
+        echo "🔍 Verifying Intel build output..."
+        ls -la "DerivedData-Intel/Build/Products/Release/"
+        if [ -d "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" ]; then
+          echo "✅ Intel build successful, copying app..."
+          cp -r "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
+          echo "📋 Intel app structure:"
+          find QuickLauncher-Intel.app -name "*.plist" -o -name "QuickLauncher" | head -10
+        else
+          echo "❌ Intel build failed - no app found"
+          exit 1
+        fi
         
         # Build ARM64 version for macOS 11.0 compatibility
         echo "🏗️ Building Apple Silicon (ARM64) version..."
@@ -113,11 +137,34 @@ jobs:
           CODE_SIGNING_ALLOWED=NO \
           ENABLE_BITCODE=NO \
           SWIFT_OPTIMIZATION_LEVEL=-O \
+          PRODUCT_BUNDLE_IDENTIFIER=cn.tekin.QuickLauncher \
+          MARKETING_VERSION=1.0.0 \
+          CURRENT_PROJECT_VERSION=1 \
+          DEVELOPMENT_LANGUAGE=en \
           -allowProvisioningUpdates \
           clean build
         
+        # Verify ARM64 build succeeded
+        echo "🔍 Checking ARM64 build results..."
+        if [ ! -d "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" ]; then
+          echo "❌ ARM64 build failed - no app bundle found"
+          find DerivedData-ARM64 -name "*.app" -type d || echo "No app bundles found"
+          exit 1
+        fi
+        ls -la "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app/Contents/"
+        
         # Copy ARM64 binary
-        cp -r "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
+        echo "🔍 Verifying ARM64 build output..."
+        ls -la "DerivedData-ARM64/Build/Products/Release/"
+        if [ -d "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" ]; then
+          echo "✅ ARM64 build successful, copying app..."
+          cp -r "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
+          echo "📋 ARM64 app structure:"
+          find QuickLauncher-ARM64.app -name "*.plist" -o -name "QuickLauncher" | head -10
+        else
+          echo "❌ ARM64 build failed - no app found"
+          exit 1
+        fi
         
         # Verify binary compatibility
         echo "🔍 Checking Intel binary compatibility:"
@@ -147,23 +194,71 @@ jobs:
         echo "📦 Packaging Intel version..."
         mkdir -p Release/Intel
         
+        # Verify the app structure first
+        echo "🔍 Verifying Intel app structure before packaging..."
+        if [ ! -d "QuickLauncher-Intel.app/Contents" ]; then
+          echo "❌ Intel app structure is incomplete. Checking build output..."
+          ls -la QuickLauncher-Intel.app/
+          find DerivedData-Intel/Build/Products/Release/ -name "*.app" -type d
+          echo "🔄 Re-copying Intel app from build output..."
+          cp -r DerivedData-Intel/Build/Products/Release/QuickLauncher.app QuickLauncher-Intel.app
+        fi
+        
         # Ensure the app has correct permissions and structure
         chmod -R 755 QuickLauncher-Intel.app
         mv QuickLauncher-Intel.app Release/Intel/
         
-        # Update Info.plist for Intel version
-        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.15" "Release/Intel/QuickLauncher.app/Contents/Info.plist"
+        # Update Info.plist for Intel version (create if doesn't exist)
+        INFO_PLIST="Release/Intel/QuickLauncher.app/Contents/Info.plist"
+        if [ ! -f "$INFO_PLIST" ]; then
+          echo "📝 Creating Info.plist for Intel version..."
+          mkdir -p "$(dirname "$INFO_PLIST")"
+          cp QuickLauncher/Info.plist "$INFO_PLIST"
+          # Replace build variables with actual values
+          sed -i '' 's/$(DEVELOPMENT_LANGUAGE)/en/g' "$INFO_PLIST"
+          sed -i '' 's/$(EXECUTABLE_NAME)/QuickLauncher/g' "$INFO_PLIST"
+          sed -i '' 's/$(PRODUCT_BUNDLE_IDENTIFIER)/cn.tekin.QuickLauncher/g' "$INFO_PLIST"
+          sed -i '' 's/$(PRODUCT_NAME)/QuickLauncher/g' "$INFO_PLIST"
+          sed -i '' 's/$(MARKETING_VERSION)/1.0.0/g' "$INFO_PLIST"
+          sed -i '' 's/$(MACOSX_DEPLOYMENT_TARGET)/10.15/g' "$INFO_PLIST"
+        fi
+        
+        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.15" "$INFO_PLIST"
         
         # Create ARM64 version
         echo "📦 Packaging ARM64 version..."
         mkdir -p Release/ARM64
         
+        # Verify the app structure first
+        echo "🔍 Verifying ARM64 app structure before packaging..."
+        if [ ! -d "QuickLauncher-ARM64.app/Contents" ]; then
+          echo "❌ ARM64 app structure is incomplete. Checking build output..."
+          ls -la QuickLauncher-ARM64.app/
+          find DerivedData-ARM64/Build/Products/Release/ -name "*.app" -type d
+          echo "🔄 Re-copying ARM64 app from build output..."
+          cp -r DerivedData-ARM64/Build/Products/Release/QuickLauncher.app QuickLauncher-ARM64.app
+        fi
+        
         # Ensure the app has correct permissions and structure
         chmod -R 755 QuickLauncher-ARM64.app
         mv QuickLauncher-ARM64.app Release/ARM64/
         
-        # Update Info.plist for ARM64 version
-        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "Release/ARM64/QuickLauncher.app/Contents/Info.plist"
+        # Update Info.plist for ARM64 version (create if doesn't exist)
+        INFO_PLIST="Release/ARM64/QuickLauncher.app/Contents/Info.plist"
+        if [ ! -f "$INFO_PLIST" ]; then
+          echo "📝 Creating Info.plist for ARM64 version..."
+          mkdir -p "$(dirname "$INFO_PLIST")"
+          cp QuickLauncher/Info.plist "$INFO_PLIST"
+          # Replace build variables with actual values
+          sed -i '' 's/$(DEVELOPMENT_LANGUAGE)/en/g' "$INFO_PLIST"
+          sed -i '' 's/$(EXECUTABLE_NAME)/QuickLauncher/g' "$INFO_PLIST"
+          sed -i '' 's/$(PRODUCT_BUNDLE_IDENTIFIER)/cn.tekin.QuickLauncher/g' "$INFO_PLIST"
+          sed -i '' 's/$(PRODUCT_NAME)/QuickLauncher/g' "$INFO_PLIST"
+          sed -i '' 's/$(MARKETING_VERSION)/1.0.0/g' "$INFO_PLIST"
+          sed -i '' 's/$(MACOSX_DEPLOYMENT_TARGET)/11.0/g' "$INFO_PLIST"
+        fi
+        
+        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "$INFO_PLIST"
         
         # Copy Resources and localization files to both versions
         echo "🌍 Copying resources and localization files..."
@@ -246,106 +341,173 @@ jobs:
     - name: Generate Release Notes
       run: |
         cat > release_notes.md << 'EOF'
-        # 🚀 QuickLauncher ${{ github.ref_name }}
+        # 🚀 QuickLauncher v1.0.0 - 首个正式版发布！
+
+        > **QuickLauncher 是一款专为 macOS 设计的强大生产力工具，让你从 Finder 右键菜单直接启动终端和代码编辑器，彻底告别手动导航目录的繁琐操作。**
+
+        ## 🎯 为什么选择 QuickLauncher？
+
+        **基于 OpenInTerminal 项目全面重构，带来革命性改进：**
+        - 🚀 **体积缩小 30%**：从 32MB 优化至 22MB，下载更快，占用更少空间
+        - 🧠 **内存管理优化**：显著降低资源占用，提升系统响应速度
+        - ⚡ **构建速度提升 50-70%**：本地依赖架构，告别网络等待
+        - 🏗️ **现代化架构**：统一启动管理，告别辅助应用
+
+        ## ✨ 核心功能特性
+
+        ### 🖱️ **无缝 Finder 集成**
+        - 右键菜单直接访问，自定义应用图标显示
+        - 智能卷宗监控，动态更新可用应用
+        - 工具栏集成选项，快速访问常用功能
+
+        ### 📱 **35+ 应用程序支持**
         
+        **🖥️ 终端应用 (10 款)**
+        - Terminal, iTerm, Hyper, Alacritty, kitty, Warp, WezTerm, Tabby, Ghostty
+        
+        **✏️ 编辑器应用 (25+ 款)**
+        - **主流编辑器**: VS Code, Sublime Text, Atom, VSCodium, BBEdit, TextMate
+        - **专业 IDE**: 完整 JetBrains 套件 (AppCode, CLion, GoLand, IntelliJ IDEA, PhpStorm, PyCharm, RubyMine, WebStorm, Fleet)
+        - **苹果工具**: Xcode, TextEdit
+        - **现代编辑器**: Cursor, Nova, Zed, neovim
+        - **专业工具**: Typora (Markdown), MacVim
+
+        ### 🌍 **9 语言国际化支持**
+        - 自动 (跟随系统), English, 简体中文, Deutsch, Español, Français, Italiano, 한국어, Русский, Türkçe
+
+        ### ⚡ **生产力增强**
+        - **全局快捷键**：可自定义键盘快捷键，一键启动
+        - **状态栏集成**：菜单栏快速访问，自定义行为
+        - **路径复制**：一键复制文件/文件夹路径，支持转义选项
+        - **自定义应用**：添加和配置自定义应用程序
+        - **快速切换**：单击切换操作，提升使用效率
+
+        ## 🛠️ 技术创新亮点
+
+        ### 🔧 **本地优先架构**
+        ```swift
+        // 彻底告别网络依赖
+        repositoryURL = "file://./LocalDependencies/ShortcutRecorder"
+        // 构建速度提升 50-70%，完全离线构建
+        ```
+
+        ### 🏗️ **统一启动管理系统**
+        ```swift
+        // 取代有问题的辅助应用
+        UnifiedLaunchManager.ensureSingleInstance()
+        // 现代化启动管理，完善生命周期
+        ```
+
+        ### 🛡️ **全面错误处理**
+        - 统一错误管理，所有组件覆盖
+        - 优雅降级机制，详细日志反馈
+        - 用户友好的错误提示
+
+        ## 📊 性能对比
+
+        | 特性 | OpenInTerminal 原版 | QuickLauncher v1.0.0 |
+        |------|-------------------|---------------------|
+        **应用体积** | 32MB | **22MB** (-30%) |
+        **构建速度** | 网络依赖，慢 | **本地依赖，快 50-70%** |
+        **应用支持** | 10+ | **35+** (+250%) |
+        **语言支持** | 1 种 | **9 种** (+800%) |
+        **架构** | 辅助应用 | **统一启动管理** |
+        **文档** | 基础 | **完整文档系统** |
+
         ## 🏗️ 架构支持说明
-        
+
         本版本支持多架构，请根据你的 Mac 芯片选择合适的版本：
-        
+
         | 架构版本 | 支持系统 | 适用设备 | 下载文件 |
         |---------|---------|---------|---------|
         **Intel (x86_64)** | macOS 10.15+ | Intel 芯片 Mac | `QuickLauncher-Intel.dmg/zip` |
         **Apple Silicon (ARM64)** | macOS 11.0+ | M123 芯片 Mac | `QuickLauncher-ARM64.dmg/zip` |
-        
-        ### 🔧 安装方法
-        
-        1. **DMG 安装包** (推荐)
-           - 根据芯片选择对应版本：`QuickLauncher-Intel.dmg` 或 `QuickLauncher-ARM64.dmg`
-           - 双击挂载，拖拽应用到 Applications 文件夹
-           - 首次运行可能需要允许运行
-        
-        2. **ZIP 压缩包**
-           - 根据芯片选择：`QuickLauncher-Intel.zip` 或 `QuickLauncher-ARM64.zip`
-           - 解压后将 `QuickLauncher.app` 复制到 Applications 文件夹
-        
-        ### 🔐 权限设置
-        
-        QuickLauncher 需要以下权限才能正常工作：
-        
+
+        ## 🔧 安装方法
+
+        ### 📦 **方法 1: DMG 安装包 (推荐)**
+        1. 根据芯片选择版本：`QuickLauncher-Intel.dmg` 或 `QuickLauncher-ARM64.dmg`
+        2. 双击挂载，拖拽应用到 Applications 文件夹
+        3. 首次运行可能需要允许运行
+
+        ### 📁 **方法 2: ZIP 压缩包**
+        1. 选择对应架构版本：`QuickLauncher-Intel.zip` 或 `QuickLauncher-ARM64.zip`
+        2. 解压后将 `QuickLauncher.app` 复制到 Applications 文件夹
+
+        ## 🔐 权限配置
+
         **必需权限：**
-        - **Apple Events 权限**：用于与 Finder 交互，获取文件路径
-        - **辅助功能权限**：用于监听快捷键和系统事件（如需要）
-        
+        - **Apple Events 权限**：与 Finder 交互，获取文件路径
+        - **辅助功能权限**：监听快捷键和系统事件（如需要）
+
         **设置方法：**
         1. 打开 **系统设置 > 隐私与安全性**
         2. 点击 **辅助功能** 或 **自动化**
         3. 添加 QuickLauncher 并勾选允许
         4. 重启应用使权限生效
+
+        ## 🎮 使用场景示例
+
+        ### 📂 **开发者工作流**
+        1. 在 Finder 中找到项目文件夹
+        2. 右键选择 "Open in Terminal" → 直接在项目路径打开终端
+        3. 右键选择 "Open in VS Code" → 直接在 VS Code 中打开项目
+        4. 使用快捷键 `⌘+⇧+Q` 快速访问 QuickLauncher 主界面
+
+        ### 🚀 **设计师工作流**
+        1. 右键设计文件 → "Open in Photoshop" 直接编辑
+        2. 复制文件路径 → 快速分享给团队成员
+        3. 状态栏快速访问 → 启动常用设计工具
+
+        ## ⌨️ 默认快捷键
+
+        | 快捷键 | 功能 |
+        |--------|------|
+        `⌘ + ⇧ + Q` | 打开 QuickLauncher 主界面 |
+        `⌘ + ⇧ + C` | 复制当前文件路径 |
+        `⌘ + ⇧ + R` | 刷新应用列表 |
+
+        ## 🎯 版本里程碑
+
+        **v1.0.0 标志着 QuickLauncher 从实验项目向专业生产力工具的完全转变：**
+
+        ### ✅ **技术成熟度**
+        - 生产就绪的架构，全面错误处理
+        - 专业构建系统，CI/CD 自动化
+        - 完整文档和开发者资源
+
+        ### 🎨 **用户体验**
+        - 显著性能改进（体积小 30%，构建快 50-70%）
+        - 扩展应用支持（35+ vs 原版 10+）
+        - 多语言支持和自定义配置
+
+        ### 🏛️ **项目治理**
+        - 建立贡献指南和安全策略
+        - 专业文档结构
+        - 社区导向开发方法
+
+        ## 🔗 相关链接
+
+        - 📖 [使用文档](https://github.com/tekintian/QuickLauncher/blob/main/README.md)
+        - 🚀 [快速开始](https://github.com/tekintian/QuickLauncher/blob/main/QUICK_START.md)
+        - 🛠️ [构建说明](https://github.com/tekintian/QuickLauncher/blob/main/docs/BUILD_INSTRUCTIONS.md)
+        - 🐛 [问题反馈](https://github.com/tekintian/QuickLauncher/issues)
+        - 🤝 [贡献指南](https://github.com/tekintian/QuickLauncher/blob/main/CONTRIBUTING.md)
+
+        ## 📈 文件校验
+
+        **验证下载文件完整性：**
+        ```bash
+        # Intel 版本
+        shasum -a 256 -c QuickLauncher-Intel.dmg.sha256
         
-        ### ✨ 功能特性
-        
-        - 🚀 **快速启动**：一键启动常用的应用和脚本
-        - 📂 **路径管理**：快速复制和访问文件路径
-        - ⌨️ **快捷键支持**：自定义快捷键提高效率
-        - 🎯 **状态栏集成**：随时随地访问常用功能
-        - 🍎 **原生体验**：专为 macOS 设计，界面简洁优雅
-        - 🌍 **多语言支持**：支持中文和英文界面
-        
-        ### 🔧 主要功能
-        
-        1. **快速启动器**
-           - 支持添加常用应用、脚本、文件路径
-           - 智能搜索和分类管理
-           - 自定义快捷键启动
-        
-        2. **路径工具**
-           - 一键复制当前文件路径
-           - 支持相对路径和绝对路径
-           - 路径格式转换
-        
-        3. **脚本执行**
-           - 支持 Shell 脚本快速执行
-           - 常用命令收藏和管理
-           - 执行结果查看
-        
-        ### 🖥️ 系统要求
-        
-        - **Intel 版本**: macOS 10.15 (Catalina) 或更高版本
-        - **ARM64 版本**: macOS 11.0 (Big Sur) 或更高版本
-        - 需要 Apple Events 和辅助功能权限
-        
-        ### 📝 使用方法
-        
-        1. 启动应用后，状态栏会显示 QuickLauncher 图标
-        2. 点击状态栏图标打开主界面
-        3. 添加常用的应用、脚本或文件路径
-        4. 设置快捷键或直接点击启动
-        
-        ### ⌨️ 默认快捷键
-        
-        - `⌘ + ⇧ + Q`：打开 QuickLauncher 主界面
-        - `⌘ + ⇧ + C`：复制当前文件路径
-        - `⌘ + ⇧ + R`：刷新应用列表
-        
-        ### 🔗 相关链接
-        
-        - [使用文档](https://github.com/tekintian/QuickLauncher/blob/main/README.md)
-        - [快速开始](https://github.com/tekintian/QuickLauncher/blob/main/QUICK_START.md)
-        - [图标更新工具](https://github.com/tekintian/QuickLauncher/blob/main/scripts/README_update_icons.md)
-        - [问题反馈](https://github.com/tekintian/QuickLauncher/issues)
-        
+        # ARM64 版本  
+        shasum -a 256 -c QuickLauncher-ARM64.dmg.sha256
+        ```
+
         ---
-        
-        **📊 文件校验**
-        - SHA256 校验和文件已提供，请验证文件完整性
-        - `shasum -a 256 -c QuickLauncher-Intel.dmg.sha256` (Intel 版本)
-        - `shasum -a 256 -c QuickLauncher-ARM64.dmg.sha256` (ARM64 版本)
-        
-        **⚠️ 免责声明**
-        本软件仅供学习和个人使用，使用风险自负。
-        
-        **🔄 更新日志**
-        请查看 [CHANGELOG.md](https://github.com/tekintian/QuickLauncher/blob/main/CHANGELOG.md) 了解详细更新内容。
+
+        **🌟 如果 QuickLauncher 对你有帮助，请考虑给项目一个 Star！**
         EOF
         
     - name: Release

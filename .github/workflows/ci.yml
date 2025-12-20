@@ -202,6 +202,7 @@ jobs:
         echo "📦 Creating original package..."
         cd CI-Artifacts
         # Create a temporary copy with proper name
+        echo "  📋 Copying from: $APP_PATH"
         cp -R "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Original.app"
         tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Original.app"
         rm -rf "QuickLauncher-${{ matrix.config_name }}-Original.app"
@@ -265,6 +266,7 @@ jobs:
         echo "📦 Creating final package..."
         cd CI-Artifacts
         # Create a temporary copy with proper name
+        echo "  📋 Copying from: $APP_PATH"
         cp -R "$APP_PATH" "QuickLauncher-${{ matrix.config_name }}-Final.app"
         tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" "QuickLauncher-${{ matrix.config_name }}-Final.app"
         rm -rf "QuickLauncher-${{ matrix.config_name }}-Final.app"

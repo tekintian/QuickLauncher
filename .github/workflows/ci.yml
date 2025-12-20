@@ -185,16 +185,25 @@ jobs:
         # Check for duplicate files in Framework
         echo "🔍 Checking for duplicate files in Framework:"
         cd "$FRAMEWORKS_DIR"
-        find . -type f -exec basename {} \; | sort | uniq -d | while read file; do
-            echo "  ⚠️ Duplicate file found: $file"
-            find . -name "$file" -ls
-        done
+        DUPLICATE_FILES=$(find . -type f -exec basename {} \; | sort | uniq -d)
+        if [ -n "$DUPLICATE_FILES" ]; then
+            echo "  ⚠️ Duplicate files found (this is expected for localization files):"
+            echo "$DUPLICATE_FILES" | while read file; do
+                if [ -n "$file" ]; then
+                    echo "    📄 $file (found in multiple language folders)"
+                fi
+            done
+        else
+            echo "  ✅ No duplicate files found"
+        fi
         cd /Users/runner/work/QuickLauncher/QuickLauncher
         
         # Step 3: Package original app (before modifications)
         echo "📦 Creating original package..."
         cd CI-Artifacts
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+        APP_DIR=$(dirname "$APP_PATH")
+        APP_NAME=$(basename "$APP_PATH")
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" -C "$APP_DIR" "$APP_NAME"
         echo "  📊 Original package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Original.tar.xz" | cut -f1)"
         cd ..
         
@@ -254,7 +263,7 @@ jobs:
         # Step 4: Create final package
         echo "📦 Creating final package..."
         cd CI-Artifacts
-        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+        tar -cJf "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" -C "$APP_DIR" "$APP_NAME"
         echo "  📊 Final package size: $(du -sh "QuickLauncher-${{ matrix.config_name }}-Final.tar.xz" | cut -f1)"
         
         # Show all packages

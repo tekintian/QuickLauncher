@@ -11,6 +11,7 @@ name: Release
 
 on:
   push:
+    branches: [ main, master, dev ]
     # Trigger release workflow on new version tags
     tags:
       - 'v*'
@@ -74,6 +75,10 @@ jobs:
           CODE_SIGN_IDENTITY="" \
           CODE_SIGNING_REQUIRED=NO \
           CODE_SIGNING_ALLOWED=NO
+        # tar the build output for reference (same as CI workflow)
+        echo "📦 Saving build output..."
+        tar -cJf build-output-${{ matrix.config_name }}.tar.xz DerivedData-${{ matrix.config_name }}/Build/Products/
+        echo "📦 Build output saved to build-output-${{ matrix.config_name }}.tar.xz"
 
     - name: Create Artifacts
       run: |
@@ -89,6 +94,8 @@ jobs:
         # Step 3: Prepare CI-Artifacts directory (same as CI workflow)
         rm -rf CI-Artifacts
         mkdir -p CI-Artifacts
+        # Save build output tar for reference (same as CI workflow)
+        mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/build-output-${{ matrix.config_name }}.tar.xz
 
         echo "🧹 Running library cleanup script..."
    
@@ -120,9 +127,11 @@ jobs:
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.config_name }}-build
+        name: ${{ matrix.config_name }}-build-${{ github.run_number }}
         path: CI-Artifacts/
         retention-days: 1
+        compression-level: 0
+        if-no-files-found: error
 
   package-release:
     needs: build
@@ -144,42 +153,60 @@ jobs:
         
         # Check what artifacts were downloaded
         echo "📋 Downloaded artifacts structure:"
-        find artifacts -type d -name "*build*" || echo "No build artifacts found"
+        find artifacts -type d
         ls -la artifacts/ || echo "Empty artifacts directory"
         
-        # Extract Intel build if exists
-        if [ -d "artifacts/Intel-build" ]; then
-          echo "📦 Extracting Intel build..."
-          cp -R artifacts/Intel-build/* Release/Intel/
-          # The app should be at Release/Intel/QuickLauncher.app
-          if [ -f "Release/Intel/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
-            echo "✅ Intel app extracted successfully"
+        # Look for Intel artifact (with run_number)
+        INTEL_ARTIFACT=$(find artifacts -name "*Intel-build*" -type d | head -1)
+        if [ -n "$INTEL_ARTIFACT" ]; then
+          echo "📦 Found Intel artifact: $INTEL_ARTIFACT"
+          ls -la "$INTEL_ARTIFACT/"
+          # The app should be directly in the artifact directory
+          if [ -d "$INTEL_ARTIFACT/QuickLauncher.app" ]; then
+            echo "📋 Moving Intel app..."
+            mv "$INTEL_ARTIFACT/QuickLauncher.app" Release/Intel/
+            if [ -f "Release/Intel/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
+              echo "✅ Intel app moved successfully"
+            else
+              echo "❌ Intel app executable not found after move"
+              find Release/Intel -type f
+              exit 1
+            fi
           else
-            echo "❌ Intel app extraction failed"
-            find Release/Intel -name "*.app" -type d || echo "No .app found in Intel release"
+            echo "❌ QuickLauncher.app not found in Intel artifact directory"
+            find "$INTEL_ARTIFACT" -name "*.app" -type d || echo "No .app found in Intel artifact"
             exit 1
           fi
         else
           echo "❌ Intel build artifact not found"
-          find artifacts -type d
+          find artifacts -name "*Intel*" -type d
           exit 1
         fi
         
-        # Extract ARM64 build if exists  
-        if [ -d "artifacts/ARM64-build" ]; then
-          echo "📦 Extracting ARM64 build..."
-          cp -R artifacts/ARM64-build/* Release/ARM64/
-          # The app should be at Release/ARM64/QuickLauncher.app
-          if [ -f "Release/ARM64/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
-            echo "✅ ARM64 app extracted successfully"
+        # Look for ARM64 artifact (with run_number)
+        ARM64_ARTIFACT=$(find artifacts -name "*ARM64-build*" -type d | head -1)
+        if [ -n "$ARM64_ARTIFACT" ]; then
+          echo "📦 Found ARM64 artifact: $ARM64_ARTIFACT"
+          ls -la "$ARM64_ARTIFACT/"
+          # The app should be directly in the artifact directory
+          if [ -d "$ARM64_ARTIFACT/QuickLauncher.app" ]; then
+            echo "📋 Moving ARM64 app..."
+            mv "$ARM64_ARTIFACT/QuickLauncher.app" Release/ARM64/
+            if [ -f "Release/ARM64/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
+              echo "✅ ARM64 app moved successfully"
+            else
+              echo "❌ ARM64 app executable not found after move"
+              find Release/ARM64 -type f
+              exit 1
+            fi
           else
-            echo "❌ ARM64 app extraction failed"
-            find Release/ARM64 -name "*.app" -type d || echo "No .app found in ARM64 release"
+            echo "❌ QuickLauncher.app not found in ARM64 artifact directory"
+            find "$ARM64_ARTIFACT" -name "*.app" -type d || echo "No .app found in ARM64 artifact"
             exit 1
           fi
         else
           echo "❌ ARM64 build artifact not found"
-          find artifacts -type d
+          find artifacts -name "*ARM64*" -type d
           exit 1
         fi
         

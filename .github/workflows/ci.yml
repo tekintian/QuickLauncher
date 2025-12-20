@@ -113,27 +113,36 @@ jobs:
           
         # Verify build succeeded
         echo "🔍 Checking ${{ matrix.config_name }} build results..."
-        if [ ! -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" ]; then
+        
+        # Check both Debug and Release configurations
+        BUILD_CONFIG=""
+        if [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" ]; then
+          BUILD_CONFIG="Debug"
+        elif [ -d "DerivedData-${{ matrix.config_name }}/Build/Products/Release/QuickLauncher.app" ]; then
+          BUILD_CONFIG="Release"
+        else
           echo "❌ ${{ matrix.config_name }} build failed - no app bundle found"
           find "DerivedData-${{ matrix.config_name }}" -name "*.app" -type d || echo "No app bundles found"
           exit 1
         fi
-        ls -la "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app/Contents/"
+        
+        echo "✅ Found app bundle in $BUILD_CONFIG configuration"
+        ls -la "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app/Contents/"
         
         # Check binary
         echo "🔍 Verifying ${{ matrix.config_name }} binary..."
-        file "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app/Contents/MacOS/QuickLauncher"
+        file "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app/Contents/MacOS/QuickLauncher"
         
         # Show app structure
         echo "📋 App structure:"
-        find "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" -name "*.plist" | head -3
+        find "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app" -name "*.plist" | head -3
         
         # Create CI build artifacts
         echo "📦 Creating CI artifacts for ${{ matrix.config_name }}..."
         mkdir -p CI-Artifacts
         
         # Copy the built app
-        cp -R "DerivedData-${{ matrix.config_name }}/Build/Products/Debug/QuickLauncher.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
+        cp -R "DerivedData-${{ matrix.config_name }}/Build/Products/$BUILD_CONFIG/QuickLauncher.app" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
         # Ensure proper permissions
         chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"

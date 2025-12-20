@@ -108,6 +108,7 @@ jobs:
           find DerivedData-Intel -name "*.app" -type d || echo "No app bundles found"
           exit 1
         fi
+        echo "📋 Intel app structure verification:"
         ls -la "DerivedData-Intel/Build/Products/Release/QuickLauncher.app/Contents/"
         
         # Copy Intel binary
@@ -118,6 +119,18 @@ jobs:
           cp -r "DerivedData-Intel/Build/Products/Release/QuickLauncher.app" "QuickLauncher-Intel.app"
           echo "📋 Intel app structure:"
           find QuickLauncher-Intel.app -name "*.plist" -o -name "QuickLauncher" | head -10
+          
+          # Verify binary architecture
+          echo "🔍 Intel binary verification:"
+          file "QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher" || echo "⚠️ Could not verify binary"
+          
+          # Test Info.plist if exists
+          if [ -f "QuickLauncher-Intel.app/Contents/Info.plist" ]; then
+            echo "✅ Intel Info.plist exists"
+            /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "QuickLauncher-Intel.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
+          else
+            echo "⚠️ Intel Info.plist missing - will be created in packaging step"
+          fi
         else
           echo "❌ Intel build failed - no app found"
           exit 1
@@ -151,6 +164,7 @@ jobs:
           find DerivedData-ARM64 -name "*.app" -type d || echo "No app bundles found"
           exit 1
         fi
+        echo "📋 ARM64 app structure verification:"
         ls -la "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app/Contents/"
         
         # Copy ARM64 binary
@@ -161,6 +175,18 @@ jobs:
           cp -r "DerivedData-ARM64/Build/Products/Release/QuickLauncher.app" "QuickLauncher-ARM64.app"
           echo "📋 ARM64 app structure:"
           find QuickLauncher-ARM64.app -name "*.plist" -o -name "QuickLauncher" | head -10
+          
+          # Verify binary architecture
+          echo "🔍 ARM64 binary verification:"
+          file "QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher" || echo "⚠️ Could not verify binary"
+          
+          # Test Info.plist if exists
+          if [ -f "QuickLauncher-ARM64.app/Contents/Info.plist" ]; then
+            echo "✅ ARM64 Info.plist exists"
+            /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "QuickLauncher-ARM64.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
+          else
+            echo "⚠️ ARM64 Info.plist missing - will be created in packaging step"
+          fi
         else
           echo "❌ ARM64 build failed - no app found"
           exit 1
@@ -177,6 +203,24 @@ jobs:
         echo "📋 Available binaries:"
         ls -la QuickLauncher-*.app
         
+        # Final build verification summary
+        echo ""
+        echo "🎉 Build Summary:"
+        echo "📊 Architecture builds completed:"
+        echo "  - Intel (x86_64): ✅"
+        if [ -d "QuickLauncher-Intel.app" ]; then
+          echo "    - App bundle: $(du -sh QuickLauncher-Intel.app | cut -f1)"
+          echo "    - Binary: $(file QuickLauncher-Intel.app/Contents/MacOS/QuickLauncher | cut -d: -f2-)"
+        fi
+        echo "  - ARM64 (Apple Silicon): ✅"
+        if [ -d "QuickLauncher-ARM64.app" ]; then
+          echo "    - App bundle: $(du -sh QuickLauncher-ARM64.app | cut -f1)"
+          echo "    - Binary: $(file QuickLauncher-ARM64.app/Contents/MacOS/QuickLauncher | cut -d: -f2-)"
+        fi
+        echo "  - Dependencies resolved: ✅"
+        echo "  - Ready for packaging: ✅"
+        echo ""
+
         # Restore original files
         if [ -f "Package-local.swift" ]; then
           echo "🔄 Restoring original Package.swift..."

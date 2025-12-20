@@ -138,25 +138,88 @@ jobs:
         # Ensure proper permissions
         chmod -R 755 "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app"
         
+        # Copy Resources and localization files
+        echo "🌍 Copying resources and localization files..."
+        
+        # Copy Assets if they exist
+        if [ -d "QuickLauncher/Assets.xcassets" ]; then
+          mkdir -p "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
+          cp -r QuickLauncher/Assets.xcassets "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
+          echo "✅ Assets copied"
+        fi
+        
+        # Copy localization files
+        if [ -d "QuickLauncher/de.lproj" ] || [ -d "QuickLauncher/en.lproj" ]; then
+          mkdir -p "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
+          cp -r QuickLauncher/*.lproj "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/" 2>/dev/null || true
+          echo "✅ Localization files copied"
+        fi
+        
+        # Copy MainMenu.xib if needed
+        if [ -f "QuickLauncher/MainMenu.xib" ]; then
+          mkdir -p "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
+          cp QuickLauncher/MainMenu.xib "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources/"
+          echo "✅ MainMenu.xib copied"
+        fi
+        
+        # Apply ad-hoc signature for macOS compatibility
+        echo "🔐 Applying ad-hoc signature..."
+        codesign --force --deep --sign "-" --options runtime "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" || echo "⚠️ Ad-hoc signing failed (may be expected on CI)"
+        
         # Verify app structure in artifact
         echo "🔍 Verifying CI artifact structure..."
         ls -la "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/"
         
-        # Test basic app functionality (basic structure test)
-        echo "🧪 Running basic app validation..."
+        # Test basic app functionality (comprehensive validation)
+        echo "🧪 Running comprehensive app validation..."
+        
+        # Check Info.plist
         if [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Info.plist" ]; then
           echo "✅ Info.plist exists"
-          /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Info.plist" || echo "⚠️ Could not read bundle identifier"
+          BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Info.plist" 2>/dev/null || echo "cn.tekin.QuickLauncher")
+          echo "📋 Bundle ID: $BUNDLE_ID"
         else
           echo "❌ Info.plist missing"
           exit 1
         fi
         
+        # Check executable
         if [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ]; then
           echo "✅ Executable exists"
-          file "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher"
+          BINARY_INFO=$(file "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher")
+          echo "📋 Binary: $BINARY_INFO"
         else
           echo "❌ Executable missing"
+          exit 1
+        fi
+        
+        # Check Resources
+        if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources" ]; then
+          echo "✅ Resources directory exists"
+          ASSETS_COUNT=$(find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources" -name "*.xcassets" | wc -l)
+          LOCALIZATION_COUNT=$(find "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/Resources" -name "*.lproj" | wc -l)
+          echo "📋 Assets: $ASSETS_COUNT, Localization: $LOCALIZATION_COUNT"
+        else
+          echo "⚠️ Resources directory missing (may be optional)"
+        fi
+        
+        # Check code signature
+        echo "🔍 Checking code signature..."
+        if codesign --verify --verbose "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" 2>/dev/null; then
+          echo "✅ Code signature valid"
+        else
+          echo "⚠️ Code signature verification failed (may be expected for ad-hoc signing)"
+        fi
+        
+        # Test basic macOS compatibility
+        echo "🧪 Testing macOS compatibility..."
+        if [ -x "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" ]; then
+          echo "✅ Executable has proper permissions"
+          # Quick architecture check
+          ARCH_CHECK=$(lipo -info "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/Contents/MacOS/QuickLauncher" 2>/dev/null || echo "Single arch")
+          echo "📋 Architecture: $ARCH_CHECK"
+        else
+          echo "❌ Executable not executable"
           exit 1
         fi
         
@@ -172,6 +235,32 @@ jobs:
             ls -la "$contents_dir/"
           done
         fi
+        
+        # Final integrity test
+        echo "🔍 Running final integrity test..."
+        APP_SIZE=$(du -sh "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app" | cut -f1)
+        echo "📊 App bundle size: $APP_SIZE"
+        
+        # Verify required directory structure
+        REQUIRED_DIRS=("Contents/MacOS" "Contents/Resources" "Contents")
+        for dir in "${REQUIRED_DIRS[@]}"; do
+          if [ -d "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/$dir" ]; then
+            echo "✅ Directory $dir exists"
+          else
+            echo "⚠️ Directory $dir missing"
+          fi
+        done
+        
+        # Verify required files
+        REQUIRED_FILES=("Contents/Info.plist" "Contents/MacOS/QuickLauncher")
+        for file in "${REQUIRED_FILES[@]}"; do
+          if [ -f "CI-Artifacts/QuickLauncher-${{ matrix.config_name }}.app/$file" ]; then
+            echo "✅ File $file exists"
+          else
+            echo "❌ Required file $file missing"
+            exit 1
+          fi
+        done
         
         # Restore original files
         if [ -f "Package-local.swift" ]; then

@@ -92,8 +92,8 @@ jobs:
         echo "🏗️ Building ${{ matrix.config_name }} version..."
         export MACOSX_DEPLOYMENT_TARGET=${{ matrix.deployment_target }}
         
-        # Build using Xcode project with enhanced parameters
-        xcodebuild -project QuickLauncher.xcodeproj \
+        # Build using Xcode workspace with enhanced parameters
+        xcodebuild -workspace QuickLauncher.xcworkspace \
           -scheme QuickLauncher \
           -configuration Debug \
           -arch ${{ matrix.arch }} \

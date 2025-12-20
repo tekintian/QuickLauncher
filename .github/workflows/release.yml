@@ -89,9 +89,9 @@ jobs:
         rm -rf build
         rm -rf DerivedData*
         
-        # Build Intel version for macOS 10.15 compatibility using Xcode project
+        # Build Intel version for macOS 10.15 compatibility using workspace
         echo "🏗️ Building Intel (x86_64) version..."
-        xcodebuild -project QuickLauncher.xcodeproj \
+        xcodebuild -workspace QuickLauncher.xcworkspace \
           -scheme QuickLauncher \
           -configuration Release \
           -arch x86_64 \
@@ -166,7 +166,7 @@ jobs:
         
         # Build ARM64 version for macOS 11.0 compatibility
         echo "🏗️ Building Apple Silicon (ARM64) version..."
-        xcodebuild -project QuickLauncher.xcodeproj \
+        xcodebuild -workspace QuickLauncher.xcworkspace \
           -scheme QuickLauncher \
           -configuration Release \
           -arch arm64 \
@@ -394,22 +394,15 @@ jobs:
         chmod -R 755 QuickLauncher-Intel.app
         mv QuickLauncher-Intel.app Release/Intel/
         
-        # Update Info.plist for Intel version (create if doesn't exist)
+        # Verify Intel Info.plist exists and has correct settings
         INFO_PLIST="Release/Intel/QuickLauncher.app/Contents/Info.plist"
-        if [ ! -f "$INFO_PLIST" ]; then
-          echo "📝 Creating Info.plist for Intel version..."
-          mkdir -p "$(dirname "$INFO_PLIST")"
-          cp QuickLauncher/Info.plist "$INFO_PLIST"
-          # Replace build variables with actual values
-          sed -i '' 's/$(DEVELOPMENT_LANGUAGE)/en/g' "$INFO_PLIST"
-          sed -i '' 's/$(EXECUTABLE_NAME)/QuickLauncher/g' "$INFO_PLIST"
-          sed -i '' 's/$(PRODUCT_BUNDLE_IDENTIFIER)/cn.tekin.QuickLauncher/g' "$INFO_PLIST"
-          sed -i '' 's/$(PRODUCT_NAME)/QuickLauncher/g' "$INFO_PLIST"
-          sed -i '' 's/$(MARKETING_VERSION)/1.0.0/g' "$INFO_PLIST"
-          sed -i '' 's/$(MACOSX_DEPLOYMENT_TARGET)/10.15/g' "$INFO_PLIST"
+        if [ -f "$INFO_PLIST" ]; then
+          echo "✅ Intel Info.plist exists, updating deployment target..."
+          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.15" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
+        else
+          echo "❌ CRITICAL: Intel Info.plist missing after move!"
+          exit 1
         fi
-        
-        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 10.15" "$INFO_PLIST"
         
         # Create ARM64 version
         echo "📦 Packaging ARM64 version..."
@@ -429,31 +422,48 @@ jobs:
         chmod -R 755 QuickLauncher-ARM64.app
         mv QuickLauncher-ARM64.app Release/ARM64/
         
-        # Update Info.plist for ARM64 version (create if doesn't exist)
+        # Verify ARM64 Info.plist exists and has correct settings
         INFO_PLIST="Release/ARM64/QuickLauncher.app/Contents/Info.plist"
-        if [ ! -f "$INFO_PLIST" ]; then
-          echo "📝 Creating Info.plist for ARM64 version..."
-          mkdir -p "$(dirname "$INFO_PLIST")"
-          cp QuickLauncher/Info.plist "$INFO_PLIST"
-          # Replace build variables with actual values
-          sed -i '' 's/$(DEVELOPMENT_LANGUAGE)/en/g' "$INFO_PLIST"
-          sed -i '' 's/$(EXECUTABLE_NAME)/QuickLauncher/g' "$INFO_PLIST"
-          sed -i '' 's/$(PRODUCT_BUNDLE_IDENTIFIER)/cn.tekin.QuickLauncher/g' "$INFO_PLIST"
-          sed -i '' 's/$(PRODUCT_NAME)/QuickLauncher/g' "$INFO_PLIST"
-          sed -i '' 's/$(MARKETING_VERSION)/1.0.0/g' "$INFO_PLIST"
-          sed -i '' 's/$(MACOSX_DEPLOYMENT_TARGET)/11.0/g' "$INFO_PLIST"
+        if [ -f "$INFO_PLIST" ]; then
+          echo "✅ ARM64 Info.plist exists, updating deployment target..."
+          /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
+        else
+          echo "❌ CRITICAL: ARM64 Info.plist missing after move!"
+          exit 1
         fi
-        
-        /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 11.0" "$INFO_PLIST"
         
         # NOTE: Resources are already compiled and included by Xcode build
         # No need to copy source resources - they would corrupt the built app structure
         
-        # Verify app structure
+        # Comprehensive app structure verification before packaging
         for arch in Intel ARM64; do
-          echo "🔍 Verifying $arch app structure:"
-          find "Release/$arch/QuickLauncher.app" -name "*.png" -o -name "*.icns" | head -5 || echo "No icon files found"
-          ls -la "Release/$arch/QuickLauncher.app/Contents/Resources/" | head -10 || echo "No Resources directory found"
+          echo "🔍 Comprehensive verification of $arch app before packaging:"
+          APP_PATH="Release/$arch/QuickLauncher.app"
+          
+          # Check executable exists and has size
+          if [ -f "$APP_PATH/Contents/MacOS/QuickLauncher" ]; then
+            EXEC_SIZE=$(du -h "$APP_PATH/Contents/MacOS/QuickLauncher" | cut -f1)
+            echo "  ✅ Executable: $EXEC_SIZE"
+          else
+            echo "  ❌ CRITICAL: Executable missing!"
+            exit 1
+          fi
+          
+          # Check total app bundle size
+          APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
+          echo "  📊 Total app size: $APP_SIZE"
+          
+          # Check critical directories
+          [ -d "$APP_PATH/Contents/Frameworks" ] && echo "  ✅ Frameworks directory" || echo "  ❌ Frameworks missing"
+          [ -d "$APP_PATH/Contents/Resources" ] && echo "  ✅ Resources directory" || echo "  ❌ Resources missing"
+          [ -d "$APP_PATH/Contents/PlugIns" ] && echo "  ✅ PlugIns directory" || echo "  ⚠️ PlugIns missing"
+          
+          # Ensure app size is reasonable (> 5MB)
+          APP_SIZE_KB=$(du -sk "$APP_PATH" | cut -f1)
+          if [ "$APP_SIZE_KB" -lt 5000 ]; then
+            echo "  ❌ CRITICAL: App bundle too small ($APP_SIZE_KB KB) - likely corrupted"
+            exit 1
+          fi
         done
         
     - name: Code Sign (Self-Signed)

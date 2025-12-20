@@ -78,28 +78,28 @@ for framework in "$FRAMEWORKS_DIR"/*.framework; do
     # Create top-level binary symlink
     BINARY_LINK="$framework/$FRAMEWORK_NAME"
     if [ ! -L "$BINARY_LINK" ]; then
-        ln -sf "Versions/Current/$FRAMEWORK_NAME" "$BINARY_LINK"
-        echo "    🔗 Created $FRAMEWORK_NAME -> Versions/Current/$FRAMEWORK_NAME symlink"
+        ln -sf "Versions/A/$FRAMEWORK_NAME" "$BINARY_LINK"
+        echo "    🔗 Created $FRAMEWORK_NAME -> Versions/A/$FRAMEWORK_NAME symlink"
     else
         BINARY_TARGET=$(readlink "$BINARY_LINK" 2>/dev/null || echo "")
-        if [ "$BINARY_TARGET" != "Versions/Current/$FRAMEWORK_NAME" ]; then
-            echo "    🔄 Fixing $FRAMEWORK_NAME symlink (was: $BINARY_TARGET, should be: Versions/Current/$FRAMEWORK_NAME)"
+        if [ "$BINARY_TARGET" != "Versions/A/$FRAMEWORK_NAME" ]; then
+            echo "    🔄 Fixing $FRAMEWORK_NAME symlink (was: $BINARY_TARGET, should be: Versions/A/$FRAMEWORK_NAME)"
             rm -f "$BINARY_LINK"
-            ln -sf "Versions/Current/$FRAMEWORK_NAME" "$BINARY_LINK"
+            ln -sf "Versions/A/$FRAMEWORK_NAME" "$BINARY_LINK"
         fi
     fi
     
     # Create Resources symlink
     RESOURCES_LINK="$framework/Resources"
     if [ ! -L "$RESOURCES_LINK" ]; then
-        ln -sf "Versions/Current/Resources" "$RESOURCES_LINK"
-        echo "    🔗 Created Resources -> Versions/Current/Resources symlink"
+        ln -sf "Versions/A/Resources" "$RESOURCES_LINK"
+        echo "    🔗 Created Resources -> Versions/A/Resources symlink"
     else
         RESOURCES_TARGET=$(readlink "$RESOURCES_LINK" 2>/dev/null || echo "")
-        if [ "$RESOURCES_TARGET" != "Versions/Current/Resources" ]; then
-            echo "    🔄 Fixing Resources symlink (was: $RESOURCES_TARGET, should be: Versions/Current/Resources)"
+        if [ "$RESOURCES_TARGET" != "Versions/A/Resources" ]; then
+            echo "    🔄 Fixing Resources symlink (was: $RESOURCES_TARGET, should be: Versions/A/Resources)"
             rm -f "$RESOURCES_LINK"
-            ln -sf "Versions/Current/Resources" "$RESOURCES_LINK"
+            ln -sf "Versions/A/Resources" "$RESOURCES_LINK"
         fi
     fi
     
@@ -111,7 +111,7 @@ for framework in "$FRAMEWORKS_DIR"/*.framework; do
     # Check that top-level items are symlinks and verify their targets
     if [ -L "$BINARY_LINK" ]; then
         BINARY_TARGET=$(readlink "$BINARY_LINK" 2>/dev/null || echo "")
-        if [ "$BINARY_TARGET" = "Versions/Current/$FRAMEWORK_NAME" ]; then
+        if [ "$BINARY_TARGET" = "Versions/A/$FRAMEWORK_NAME" ]; then
             echo "      ✅ $FRAMEWORK_NAME symlink is correct: $BINARY_TARGET"
         else
             echo "      ❌ $FRAMEWORK_NAME symlink is wrong: $BINARY_TARGET"
@@ -124,7 +124,7 @@ for framework in "$FRAMEWORKS_DIR"/*.framework; do
     
     if [ -L "$RESOURCES_LINK" ]; then
         RESOURCES_TARGET=$(readlink "$RESOURCES_LINK" 2>/dev/null || echo "")
-        if [ "$RESOURCES_TARGET" = "Versions/Current/Resources" ]; then
+        if [ "$RESOURCES_TARGET" = "Versions/A/Resources" ]; then
             echo "      ✅ Resources symlink is correct: $RESOURCES_TARGET"
         else
             echo "      ❌ Resources symlink is wrong: $RESOURCES_TARGET"

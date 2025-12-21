@@ -93,9 +93,9 @@ jobs:
 
         # Step 3: Prepare CI-Artifacts directory (same as CI workflow)
         rm -rf CI-Artifacts
-        mkdir -p CI-Artifacts
+        mkdir -p CI-Artifacts/Release/${{ matrix.config_name }}
         # Save build output tar for reference (same as CI workflow)
-        mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/build-output-${{ matrix.config_name }}.tar.xz
+        mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/Release/${{ matrix.config_name }}/build-output-${{ matrix.config_name }}.tar.xz
 
         echo "🧹 Running library cleanup script..."
    
@@ -112,11 +112,11 @@ jobs:
         [ -x "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         
         # Step 4: Package app bundle like CI workflow, but don't compress for release
-        echo " moving $APP_PATH to CI-Artifacts/QuickLauncher.app "
-        mv $APP_PATH CI-Artifacts/QuickLauncher.app
+        echo " moving $APP_PATH to CI-Artifacts/Release/${{ matrix.config_name }}/QuickLauncher.app "
+        mv $APP_PATH CI-Artifacts/Release/${{ matrix.config_name }}/QuickLauncher.app
         
         # Verify deployment target in Info.plist
-        INFO_PLIST="CI-Artifacts/QuickLauncher.app/Contents/Info.plist"
+        INFO_PLIST="CI-Artifacts/Release/${{ matrix.config_name }}/QuickLauncher.app/Contents/Info.plist"
         if [ -f "$INFO_PLIST" ]; then
           echo "✅ ${{ matrix.config_name }} Info.plist exists, updating deployment target..."
           /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${{ matrix.deployment_target }}" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
@@ -128,88 +128,56 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.config_name }}-build-${{ github.run_number }}
-        path: CI-Artifacts/
+        path: CI-Artifacts/  # Upload the entire CI-Artifacts directory
         retention-days: 1
         compression-level: 0
         if-no-files-found: error
 
   package-release:
-    needs: build
+    # Package Release Job 
+    # This job packages the release artifacts into a tarball for distribution.
+    needs: build # Depends on the build job
     runs-on: macos-14
     
     steps:
+      # Step 1: Checkout the repository to access scripts and files
     - name: Checkout
       uses: actions/checkout@v4
-      
+      with:
+        submodules: recursive
+
     - name: Download All Artifacts
       uses: actions/download-artifact@v4
       with:
-        path: artifacts
-        merge-multiple: true
+        path: artifacts # Download all artifacts into 'artifacts' directory
+        # merge-multiple: true # Uncomment if you want to merge artifacts with the same name
         
     - name: Extract Build Artifacts
       run: |
-        mkdir -p Release/Intel Release/ARM64
-        
         # Check what artifacts were downloaded
         echo "📋 Downloaded artifacts structure:"
         find artifacts -type d
         ls -la artifacts/ || echo "Empty artifacts directory"
         
-        # Look for Intel artifact (with run_number)
-        INTEL_ARTIFACT=$(find artifacts -name "*Intel-build*" -type d | head -1)
-        if [ -n "$INTEL_ARTIFACT" ]; then
-          echo "📦 Found Intel artifact: $INTEL_ARTIFACT"
-          ls -la "$INTEL_ARTIFACT/"
-          # The app should be directly in the artifact directory
-          if [ -d "$INTEL_ARTIFACT/QuickLauncher.app" ]; then
-            echo "📋 Moving Intel app..."
-            mv "$INTEL_ARTIFACT/QuickLauncher.app" Release/Intel/
-            if [ -f "Release/Intel/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
-              echo "✅ Intel app moved successfully"
-            else
-              echo "❌ Intel app executable not found after move"
-              find Release/Intel -type f
-              exit 1
-            fi
-          else
-            echo "❌ QuickLauncher.app not found in Intel artifact directory"
-            find "$INTEL_ARTIFACT" -name "*.app" -type d || echo "No .app found in Intel artifact"
-            exit 1
-          fi
-        else
-          echo "❌ Intel build artifact not found"
-          find artifacts -name "*Intel*" -type d
+        # check the download file if contains Release directories
+        # check if the download file contains Release directories
+        if [ ! -d "artifacts/Release" ]; then
+          echo "❌ No Release directory found in artifacts"
           exit 1
         fi
-        
-        # Look for ARM64 artifact (with run_number)
-        ARM64_ARTIFACT=$(find artifacts -name "*ARM64-build*" -type d | head -1)
-        if [ -n "$ARM64_ARTIFACT" ]; then
-          echo "📦 Found ARM64 artifact: $ARM64_ARTIFACT"
-          ls -la "$ARM64_ARTIFACT/"
-          # The app should be directly in the artifact directory
-          if [ -d "$ARM64_ARTIFACT/QuickLauncher.app" ]; then
-            echo "📋 Moving ARM64 app..."
-            mv "$ARM64_ARTIFACT/QuickLauncher.app" Release/ARM64/
-            if [ -f "Release/ARM64/QuickLauncher.app/Contents/MacOS/QuickLauncher" ]; then
-              echo "✅ ARM64 app moved successfully"
-            else
-              echo "❌ ARM64 app executable not found after move"
-              find Release/ARM64 -type f
-              exit 1
-            fi
-          else
-            echo "❌ QuickLauncher.app not found in ARM64 artifact directory"
-            find "$ARM64_ARTIFACT" -name "*.app" -type d || echo "No .app found in ARM64 artifact"
-            exit 1
-          fi
-        else
-          echo "❌ ARM64 build artifact not found"
-          find artifacts -name "*ARM64*" -type d
+        # check for both architectures
+        if [ ! -d "artifacts/Release/Intel" ] || [ ! -d "artifacts/Release/ARM64" ]; then
+          echo "❌ Missing Intel or ARM64 Release directory in artifacts"
           exit 1
         fi
-        
+        # check for app bundles
+        if [ ! -d "artifacts/Release/Intel/QuickLauncher.app" ] || [ ! -d "artifacts/Release/ARM64/QuickLauncher.app" ]; then
+          echo "❌ Missing Intel or ARM64 QuickLauncher.app in artifacts"
+          exit 1
+        fi
+        # Move the extracted Release directories to current working directory
+        mv artifacts/Release .
+        echo "✅ Artifacts extracted to current working directory"
         # Verify both architectures were built
         echo "📋 Verifying build artifacts:"
         for arch in Intel ARM64; do
@@ -329,174 +297,93 @@ jobs:
         
     - name: Generate Release Notes
       run: |
-        cat > release_notes.md << 'EOF'
-        # 🚀 QuickLauncher v1.0.0 - 首个正式版发布！
-
-        > **QuickLauncher 是一款专为 macOS 设计的强大生产力工具，让你从 Finder 右键菜单直接启动终端和代码编辑器，彻底告别手动导航目录的繁琐操作。**
-
-        ## 🎯 为什么选择 QuickLauncher？
-
-        **基于 OpenInTerminal 项目全面重构，带来革命性改进：**
-        - 🚀 **体积缩小 30%**：从 32MB 优化至 22MB，下载更快，占用更少空间
-        - 🧠 **内存管理优化**：显著降低资源占用，提升系统响应速度
-        - ⚡ **构建速度提升 50-70%**：本地依赖架构，告别网络等待
-        - 🏗️ **现代化架构**：统一启动管理，告别辅助应用
-
-        ## ✨ 核心功能特性
-
-        ### 🖱️ **无缝 Finder 集成**
-        - 右键菜单直接访问，自定义应用图标显示
-        - 智能卷宗监控，动态更新可用应用
-        - 工具栏集成选项，快速访问常用功能
-
-        ### 📱 **35+ 应用程序支持**
+        # Get current tag version
+        TAG_VERSION=${GITHUB_REF#refs/tags/}
         
-        **🖥️ 终端应用 (10 款)**
-        - Terminal, iTerm, Hyper, Alacritty, kitty, Warp, WezTerm, Tabby, Ghostty
+        # Generate release notes in both Chinese and English
+        cat > release_notes.md << EOF
+        # 🚀 QuickLauncher $TAG_VERSION
         
-        **✏️ 编辑器应用 (25+ 款)**
-        - **主流编辑器**: VS Code, Sublime Text, Atom, VSCodium, BBEdit, TextMate
-        - **专业 IDE**: 完整 JetBrains 套件 (AppCode, CLion, GoLand, IntelliJ IDEA, PhpStorm, PyCharm, RubyMine, WebStorm, Fleet)
-        - **苹果工具**: Xcode, TextEdit
-        - **现代编辑器**: Cursor, Nova, Zed, neovim
-        - **专业工具**: Typora (Markdown), MacVim
-
-        ### 🌍 **9 语言国际化支持**
-        - 自动 (跟随系统), English, 简体中文, Deutsch, Español, Français, Italiano, 한국어, Русский, Türkçe
-
-        ### ⚡ **生产力增强**
-        - **全局快捷键**：可自定义键盘快捷键，一键启动
-        - **状态栏集成**：菜单栏快速访问，自定义行为
-        - **路径复制**：一键复制文件/文件夹路径，支持转义选项
-        - **自定义应用**：添加和配置自定义应用程序
-        - **快速切换**：单击切换操作，提升使用效率
-
-        ## 🛠️ 技术创新亮点
-
-        ### 🔧 **本地优先架构**
-        ```swift
-        // 彻底告别网络依赖
-        repositoryURL = "file://./LocalDependencies/ShortcutRecorder"
-        // 构建速度提升 50-70%，完全离线构建
-        ```
-
-        ### 🏗️ **统一启动管理系统**
-        ```swift
-        // 取代有问题的辅助应用
-        UnifiedLaunchManager.ensureSingleInstance()
-        // 现代化启动管理，完善生命周期
-        ```
-
-        ### 🛡️ **全面错误处理**
-        - 统一错误管理，所有组件覆盖
-        - 优雅降级机制，详细日志反馈
-        - 用户友好的错误提示
-
-        ## 📊 性能对比
-
-        | 特性 | OpenInTerminal 原版 | QuickLauncher v1.0.0 |
-        |------|-------------------|---------------------|
-        **应用体积** | 32MB | **22MB** (-30%) |
-        **构建速度** | 网络依赖，慢 | **本地依赖，快 50-70%** |
-        **应用支持** | 10+ | **35+** (+250%) |
-        **语言支持** | 1 种 | **9 种** (+800%) |
-        **架构** | 辅助应用 | **统一启动管理** |
-        **文档** | 基础 | **完整文档系统** |
-
-        ## 🏗️ 架构支持说明
-
-        本版本支持多架构，请根据你的 Mac 芯片选择合适的版本：
-
-        | 架构版本 | 支持系统 | 适用设备 | 下载文件 |
-        |---------|---------|---------|---------|
-        **Intel (x86_64)** | macOS 10.13+ | Intel 芯片 Mac | `QuickLauncher-Intel.dmg/zip` |
-        **Apple Silicon (ARM64)** | macOS 11.0+ | M123 芯片 Mac | `QuickLauncher-ARM64.dmg/zip` |
-
-        ## 🔧 安装方法
-
-        ### 📦 **方法 1: DMG 安装包 (推荐)**
-        1. 根据芯片选择版本：`QuickLauncher-Intel.dmg` 或 `QuickLauncher-ARM64.dmg`
-        2. 双击挂载，拖拽应用到 Applications 文件夹
-        3. 首次运行可能需要允许运行
-
-        ### 📁 **方法 2: ZIP 压缩包**
-        1. 选择对应架构版本：`QuickLauncher-Intel.zip` 或 `QuickLauncher-ARM64.zip`
-        2. 解压后将 `QuickLauncher.app` 复制到 Applications 文件夹
-
-        ## 🔐 权限配置
-
-        **必需权限：**
-        - **Apple Events 权限**：与 Finder 交互，获取文件路径
-        - **辅助功能权限**：监听快捷键和系统事件（如需要）
-
-        **设置方法：**
-        1. 打开 **系统设置 > 隐私与安全性**
-        2. 点击 **辅助功能** 或 **自动化**
-        3. 添加 QuickLauncher 并勾选允许
-        4. 重启应用使权限生效
-
-        ## 🎮 使用场景示例
-
-        ### 📂 **开发者工作流**
-        1. 在 Finder 中找到项目文件夹
-        2. 右键选择 "Open in Terminal" → 直接在项目路径打开终端
-        3. 右键选择 "Open in VS Code" → 直接在 VS Code 中打开项目
-        4. 使用快捷键 `⌘+⇧+Q` 快速访问 QuickLauncher 主界面
-
-        ### 🚀 **设计师工作流**
-        1. 右键设计文件 → "Open in Photoshop" 直接编辑
-        2. 复制文件路径 → 快速分享给团队成员
-        3. 状态栏快速访问 → 启动常用设计工具
-
-        ## ⌨️ 默认快捷键
-
-        | 快捷键 | 功能 |
-        |--------|------|
-        `⌘ + ⇧ + Q` | 打开 QuickLauncher 主界面 |
-        `⌘ + ⇧ + C` | 复制当前文件路径 |
-        `⌘ + ⇧ + R` | 刷新应用列表 |
-
-        ## 🎯 版本里程碑
-
-        **v1.0.0 标志着 QuickLauncher 从实验项目向专业生产力工具的完全转变：**
-
-        ### ✅ **技术成熟度**
-        - 生产就绪的架构，全面错误处理
-        - 专业构建系统，CI/CD 自动化
-        - 完整文档和开发者资源
-
-        ### 🎨 **用户体验**
-        - 显著性能改进（体积小 30%，构建快 50-70%）
-        - 扩展应用支持（35+ vs 原版 10+）
-        - 多语言支持和自定义配置
-
-        ### 🏛️ **项目治理**
-        - 建立贡献指南和安全策略
-        - 专业文档结构
-        - 社区导向开发方法
-
-        ## 🔗 相关链接
-
-        - 📖 [使用文档](https://github.com/tekintian/QuickLauncher/blob/main/README.md)
-        - 🚀 [快速开始](https://github.com/tekintian/QuickLauncher/blob/main/QUICK_START.md)
-        - 🛠️ [构建说明](https://github.com/tekintian/QuickLauncher/blob/main/docs/BUILD_INSTRUCTIONS.md)
-        - 🐛 [问题反馈](https://github.com/tekintian/QuickLauncher/issues)
-        - 🤝 [贡献指南](https://github.com/tekintian/QuickLauncher/blob/main/CONTRIBUTING.md)
-
-        ## 📈 文件校验
-
-        **验证下载文件完整性：**
-        ```bash
-        # Intel 版本
-        shasum -a 256 -c QuickLauncher-Intel.dmg.sha256
+        ## 简体中文 | Chinese
         
-        # ARM64 版本  
-        shasum -a 256 -c QuickLauncher-ARM64.dmg.sha256
-        ```
-
+        QuickLauncher 是一款强大的 macOS 生产力工具，让您可以从 Finder 右键菜单直接启动终端和代码编辑器。
+        
+        ### ✨ 核心特性
+        - 🖱️ 无缝 Finder 集成，右键菜单快速访问
+        - 📱 支持 35+ 应用程序（终端、编辑器、IDE）
+        - 🌍 多语言支持（简体中文、English等9种语言）
+        - ⚡ 全局快捷键和状态栏集成
+        - 🔧 自定义应用配置
+        
+        ### 🏗️ 架构支持
+        - **Intel (x86_64)**: 适用于 Intel 芯片 Mac (macOS 10.13+)
+        - **Apple Silicon (ARM64)**: 适用于 M123 芯片 Mac (macOS 11.0+)
+        
+        ### 📦 安装方法
+        1. 下载对应架构的 DMG 或 ZIP 文件
+        2. 将 QuickLauncher.app 拖拽到 Applications 文件夹
+        3. 首次运行时，如遇到安全提示，请选择"仍要打开"
+        4. 在系统设置中授予必要的权限（辅助功能、Apple Events）
+        
+        ### 🔐 权限设置
+        - 系统设置 > 隐私与安全性 > 辅助功能
+        - 添加 QuickLauncher 并勾选允许
+        
+        ### ⚠️ 自签名应用说明
+        - **首次启动**: macOS 可能提示"无法打开'QuickLauncher.app'，因为它来自身份不明的开发者"
+          - 解决方案：在 Finder 中右键点击 QuickLauncher.app → 选择"打开" → 点击"打开"确认
+          - 或前往：系统设置 > 隐私与安全性 > 安全性 → 点击"仍要打开"
+        - **权限授予**: 首次使用右键功能时，需要在系统设置中手动授予相关权限
+        - **网络访问**: 本应用为自签名，可能需要系统允许运行未验证的应用
+        
         ---
-
-        **🌟 如果 QuickLauncher 对你有帮助，请考虑给项目一个 Star！**
+        
+        ## English
+        
+        QuickLauncher is a powerful macOS productivity tool that allows you to launch terminals and code editors directly from Finder's context menu.
+        
+        ### ✨ Key Features
+        - 🖱️ Seamless Finder integration with right-click menu access
+        - 📱 Support for 35+ applications (terminals, editors, IDEs)
+        - 🌍 Multi-language support (9 languages including Chinese and English)
+        - ⚡ Global shortcuts and menu bar integration
+        - 🔧 Custom application configuration
+        
+        ### 🏗️ Architecture Support
+        - **Intel (x86_64)**: For Intel-based Mac (macOS 10.13+)
+        - **Apple Silicon (ARM64)**: For M123-based Mac (macOS 11.0+)
+        
+        ### 📦 Installation
+        1. Download the appropriate DMG or ZIP file for your architecture
+        2. Drag QuickLauncher.app to Applications folder
+        3. On first launch, if security prompt appears, choose "Open Anyway"
+        4. Grant necessary permissions in System Settings (Accessibility, Apple Events)
+        
+        ### 🔐 Permissions
+        - System Settings > Privacy & Security > Accessibility
+        - Add QuickLauncher and check allow
+        
+        ### ⚠️ Self-Signed Application Notice
+        - **First Launch**: macOS may show "QuickLauncher.app" can't be opened because it is from an unidentified developer"
+          - Solution: Right-click QuickLauncher.app in Finder → Select "Open" → Click "Open" to confirm
+          - Alternatively: System Settings > Privacy & Security > Security → Click "Open Anyway"
+        - **Permission Grant**: When first using right-click features, manually grant required permissions in System Settings
+        - **Network Access**: As a self-signed app, macOS may require allowing unverified applications to run
+        
+        ### 🔗 Links
+        - 📖 [Documentation](https://github.com/tekintian/QuickLauncher/blob/main/README.md)
+        - 🚀 [Quick Start](https://github.com/tekintian/QuickLauncher/blob/main/QUICK_START.md)
+        - 🐛 [Issues](https://github.com/tekintian/QuickLauncher/issues)
+        
+        ### 📈 File Verification
+        \`\`\`bash
+        # Verify file integrity
+        shasum -a 256 -c QuickLauncher-*.dmg.sha256
+        \`\`\`
+        
+        ---
+        
+        🌟 If QuickLauncher helps you, please consider giving this project a Star!
         EOF
         
     - name: Release

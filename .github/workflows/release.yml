@@ -4,7 +4,7 @@
 # Uses self-signed code signing, with optional developer certificate signing.
 # Generates detailed release notes highlighting features, improvements, and installation instructions.
 # author: tekintian@gmail.com   https://dev.tekin.cn
-# date: 2025-12-20
+# date: 2025-12-21
 # version: 2.0.0
 # license: MIT
 name: Release

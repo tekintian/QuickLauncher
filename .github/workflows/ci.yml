@@ -127,3 +127,219 @@ jobs:
         retention-days: 7
         compression-level: 0
         if-no-files-found: error
+
+  sign-and-package:
+    # Sign and Package Job - validates complete release workflow
+    needs: build
+    runs-on: macos-14
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        
+    - name: Extract Build Artifacts
+      run: |
+        # Create Release directories
+        rm -rf Release
+        mkdir -p Release/Intel Release/ARM64
+        
+        # Check what artifacts were downloaded
+        echo "📋 Downloaded artifacts structure:"
+        find artifacts -type d
+        ls -la artifacts/ || echo "Empty artifacts directory"
+
+        # Find Intel and ARM64 artifacts
+        INTEL_ARTIFACT=$(find artifacts -name "*Intel*" -type d | head -1)
+        ARM64_ARTIFACT=$(find artifacts -name "*ARM64*" -type d | head -1)
+        
+        echo "📋 Found Intel artifact: $INTEL_ARTIFACT"
+        echo "📋 Found ARM64 artifact: $ARM64_ARTIFACT"
+        
+        # Process Intel artifact
+        if [ -d "$INTEL_ARTIFACT" ]; then
+          echo "📋 Processing Intel artifact..."
+          cd "$INTEL_ARTIFACT"
+          
+          if [ -f "QuickLauncher-Intel-Final.tar.xz" ]; then
+            echo "📋 Extracting Intel final package..."
+            tar -xJf QuickLauncher-Intel-Final.tar.xz
+            if [ -d "QuickLauncher.app" ]; then
+              echo "📋 Moving Intel app to Release/Intel/"
+              mv QuickLauncher.app ../../Release/Intel/
+            else
+              echo "❌ No QuickLauncher.app found in Intel final package"
+              exit 1
+            fi
+          else
+            echo "❌ Intel final package not found"
+            ls -la
+            exit 1
+          fi
+          cd ../..
+        else
+          echo "❌ Intel artifact not found"
+          exit 1
+        fi
+        
+        # Process ARM64 artifact
+        if [ -d "$ARM64_ARTIFACT" ]; then
+          echo "📋 Processing ARM64 artifact..."
+          cd "$ARM64_ARTIFACT"
+          
+          if [ -f "QuickLauncher-ARM64-Final.tar.xz" ]; then
+            echo "📋 Extracting ARM64 final package..."
+            tar -xJf QuickLauncher-ARM64-Final.tar.xz
+            if [ -d "QuickLauncher.app" ]; then
+              echo "📋 Moving ARM64 app to Release/ARM64/"
+              mv QuickLauncher.app ../../Release/ARM64/
+            else
+              echo "❌ No QuickLauncher.app found in ARM64 final package"
+              exit 1
+            fi
+          else
+            echo "❌ ARM64 final package not found"
+            ls -la
+            exit 1
+          fi
+          cd ../..
+        else
+          echo "❌ ARM64 artifact not found"
+          exit 1
+        fi
+        
+        echo "✅ Artifacts extracted to current working directory"
+        
+        # Verify both architectures were built and fix permissions if needed
+        echo "📋 Verifying build artifacts:"
+        for arch in Intel ARM64; do
+          if [ -d "Release/$arch/QuickLauncher.app" ]; then
+            echo "✅ $arch app: $(du -sh Release/$arch/QuickLauncher.app | cut -f1)"
+            
+            # Check and fix executable permissions
+            EXECUTABLE="Release/$arch/QuickLauncher.app/Contents/MacOS/QuickLauncher"
+            if [ -f "$EXECUTABLE" ]; then
+              echo "  ✅ Executable exists: $EXECUTABLE"
+              chmod +x "$EXECUTABLE"
+              ls -la "$EXECUTABLE"
+            else
+              echo "  ❌ Executable missing"
+              exit 1
+            fi
+            
+            # Verify app bundle structure
+            [ -d "Release/$arch/QuickLauncher.app/Contents/Frameworks" ] && echo "  ✅ Frameworks exists" || echo "  ❌ Frameworks missing"
+            [ -d "Release/$arch/QuickLauncher.app/Contents/Resources" ] && echo "  ✅ Resources exists" || echo "  ❌ Resources missing"
+            
+            # Fix ownership and permissions for the entire app bundle
+            chown -R runner:staff "Release/$arch/QuickLauncher.app" 2>/dev/null || true
+            chmod -R u+rw,go+r-w "Release/$arch/QuickLauncher.app" 2>/dev/null || true
+            
+          else
+            echo "❌ $arch app not found"
+            exit 1
+          fi
+        done
+        
+    - name: Code Sign (Self-Signed)
+      run: |
+        # Apply ad-hoc signatures with proper sandbox support for both versions
+        for arch in Intel ARM64; do
+          echo "🔐 Signing $arch version..."
+          
+          # Ensure plugins have proper sandbox entitlements
+          find "Release/$arch/QuickLauncher.app/Contents/PlugIns" -name "*.appex" -type d | while read plugin; do
+            echo "  Configuring sandbox for plugin: $(basename "$plugin")"
+            
+            # Add required sandbox entitlements for Finder extension
+            PLIST_PATH="$plugin/Contents/Info.plist"
+            if [ -f "$PLIST_PATH" ]; then
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.app-sandbox bool true" "$PLIST_PATH" 2>/dev/null || echo "    Sandbox key already exists"
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.files.user-selected.read-write bool true" "$PLIST_PATH" 2>/dev/null || echo "    File access key already exists"
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.temporary-exception.mach-lookup.global-name array" "$PLIST_PATH" 2>/dev/null || echo "    Mach lookup array already exists"
+              /usr/libexec/PlistBuddy -c "Add :com.apple.security.temporary-exception.mach-lookup.global-name:0 string com.apple.FinderSync" "$PLIST_PATH" 2>/dev/null || echo "    Finder sync entry already exists"
+            fi
+            
+            echo "  Signing plugin: $(basename "$plugin")"
+            codesign --force --sign "-" --options runtime --entitlements <(echo '<?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>com.apple.security.app-sandbox</key>
+                <true/>
+                <key>com.apple.security.files.user-selected.read-write</key>
+                <true/>
+                <key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+                <array>
+                    <string>com.apple.FinderSync</string>
+                </array>
+            </dict>
+            </plist>') "$plugin" || echo "  ⚠️ Plugin signing failed"
+          done
+          
+          # Sign frameworks
+          find "Release/$arch/QuickLauncher.app/Contents/Frameworks" -name "*.framework" -type d | while read framework; do
+            echo "  Signing framework: $(basename "$framework")"
+            
+            # Fix framework library ID for proper dylib loading
+            FRAMEWORK_NAME=$(basename "$framework" .framework)
+            FRAMEWORK_BINARY="$framework/$FRAMEWORK_NAME"
+            if [ -f "$FRAMEWORK_BINARY" ]; then
+              echo "    Fixing framework library ID for $FRAMEWORK_NAME"
+              install_name_tool -id "@rpath/$FRAMEWORK_NAME.framework/Versions/A/$FRAMEWORK_NAME" "$FRAMEWORK_BINARY" 2>/dev/null || echo "    Library ID already correct"
+            fi
+            
+            codesign --force --sign "-" --options runtime "$framework" || echo "  ⚠️ Framework signing failed"
+          done
+          
+          # Fix main app dependency paths
+          echo "  Fixing main app dependency paths..."
+          MAIN_BINARY="Release/$arch/QuickLauncher.app/Contents/MacOS/QuickLauncher"
+          if [ -f "$MAIN_BINARY" ]; then
+            # Fix dylib references to use proper framework paths
+            install_name_tool -change "@rpath/QuickLauncher.debug.dylib" "@rpath/QuickLauncherCore.framework/Versions/A/QuickLauncherCore" "$MAIN_BINARY" 2>/dev/null || echo "    Dependencies already correct"
+          fi
+          
+          # Sign main app
+          echo "  Signing main app bundle..."
+          codesign --force --deep --sign "-" --options runtime "Release/$arch/QuickLauncher.app" || echo "⚠️ Main app signing failed"
+          codesign --verify --verbose "Release/$arch/QuickLauncher.app" || echo "⚠️ Signature verification failed (may be expected for ad-hoc)"
+        done
+        
+    - name: Create Test Packages
+      run: |
+        # Create DMG and ZIP for testing (without releasing)
+        chmod +x scripts/create-simple-dmg.sh
+        
+        echo "📦 Creating Intel DMG installer..."
+        ./scripts/create-simple-dmg.sh "Release/Intel/QuickLauncher.app" "QuickLauncher-Intel-Test.dmg"
+        
+        echo "📦 Creating ARM64 DMG installer..."
+        ./scripts/create-simple-dmg.sh "Release/ARM64/QuickLauncher.app" "QuickLauncher-ARM64-Test.dmg"
+        
+        echo "📦 Creating Intel ZIP..."
+        cd Release/Intel
+        zip -r ../../QuickLauncher-Intel-Test.zip QuickLauncher.app
+        cd ../ARM64
+        zip -r ../../QuickLauncher-ARM64-Test.zip QuickLauncher.app
+        cd ../..
+        
+        echo "📋 Generated test packages:"
+        ls -lh QuickLauncher-*.dmg QuickLauncher-*.zip
+        
+    - name: Upload Test Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: QuickLauncher-Signed-Test-${{ github.run_number }}
+        path: |
+          QuickLauncher-*.dmg
+          QuickLauncher-*.zip
+        retention-days: 3
+        compression-level: 0
+        if-no-files-found: error

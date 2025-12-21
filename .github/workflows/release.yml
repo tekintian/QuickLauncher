@@ -11,10 +11,10 @@ name: Release
 
 on:
   push:
-    branches: [ main, master, dev ]
-    # Trigger release workflow on new version tags
+    # branches: [ main, master, dev ] # just for test workflow run
     tags:
       - 'v*'
+  workflow_dispatch: # manual trigger
 
 permissions:
   contents: write
@@ -462,7 +462,22 @@ jobs:
         🌟 If QuickLauncher helps you, please consider giving this project a Star!
         EOF
         
+    - name: Upload Build Artifacts (Branch Push)
+      if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: QuickLauncher-Build-${{ github.run_number }}
+        path: |
+          QuickLauncher-*.dmg
+          QuickLauncher-*.zip
+          QuickLauncher-*.sha256
+          build-output-*.tar.xz
+        retention-days: 7
+        compression-level: 0
+        if-no-files-found: error
+        
     - name: Release
+      if: ${{ startsWith(github.ref, 'refs/tags/') }}
       uses: softprops/action-gh-release@v1
       with:
         files: |

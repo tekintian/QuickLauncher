@@ -127,6 +127,9 @@ jobs:
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
+        # this name will be used to identify the artifact in the download step, so include config name
+        # final artifact will be include this name plus run number, e.g., Intel-build-123
+        # in this case,the path like:  Intel-build-14/Release/Intel/QuickLauncher.app
         name: ${{ matrix.config_name }}-build-${{ github.run_number }}
         path: CI-Artifacts/  # Upload the entire CI-Artifacts directory
         retention-days: 1
@@ -158,25 +161,25 @@ jobs:
         echo "📋 Downloaded artifacts structure:"
         find artifacts -type d
         ls -la artifacts/ || echo "Empty artifacts directory"
+
+        INTEL_ARTIFACT=$(find artifacts -name "*Intel-build-*" -type d | head -1)/Release/Intel
+        ARM64_ARTIFACT=$(find artifacts -name "*ARM64-build-*" -type d | head -1)/Release/ARM64
+        if [ ! -d "$INTEL_ARTIFACT" ] || [ ! -d "$ARM64_ARTIFACT" ]; then
+          echo "❌ Could not find Intel or ARM64 build artifacts"
+          exit 1
+        fi
         
-        # check the download file if contains Release directories
-        # check if the download file contains Release directories
-        if [ ! -d "artifacts/Release" ]; then
-          echo "❌ No Release directory found in artifacts"
-          exit 1
-        fi
-        # check for both architectures
-        if [ ! -d "artifacts/Release/Intel" ] || [ ! -d "artifacts/Release/ARM64" ]; then
-          echo "❌ Missing Intel or ARM64 Release directory in artifacts"
-          exit 1
-        fi
         # check for app bundles
-        if [ ! -d "artifacts/Release/Intel/QuickLauncher.app" ] || [ ! -d "artifacts/Release/ARM64/QuickLauncher.app" ]; then
+        if [ ! -d "$INTEL_ARTIFACT/QuickLauncher.app" ] || [ ! -d "$ARM64_ARTIFACT/QuickLauncher.app" ]; then
           echo "❌ Missing Intel or ARM64 QuickLauncher.app in artifacts"
           exit 1
         fi
+        # Clean up any existing Release directory
+        rm -rf Release
+        mkdir -p Release
         # Move the extracted Release directories to current working directory
-        mv artifacts/Release .
+        mv $INTEL_ARTIFACT Release/Intel
+        mv $ARM64_ARTIFACT Release/ARM64
         echo "✅ Artifacts extracted to current working directory"
         # Verify both architectures were built
         echo "📋 Verifying build artifacts:"

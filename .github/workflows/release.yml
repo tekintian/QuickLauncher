@@ -91,11 +91,11 @@ jobs:
         
         echo "find app bundle at: $APP_PATH"
 
-        # Step 3: Prepare CI-Artifacts directory (same as CI workflow)
+        # Prepare CI-Artifacts directory (same as CI workflow)
         rm -rf CI-Artifacts
-        mkdir -p CI-Artifacts/Release/${{ matrix.config_name }}
+        mkdir -p CI-Artifacts
         # Save build output tar for reference (same as CI workflow)
-        mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/Release/${{ matrix.config_name }}/build-output-${{ matrix.config_name }}.tar.xz
+        mv build-output-${{ matrix.config_name }}.tar.xz CI-Artifacts/build-output-${{ matrix.config_name }}.tar.xz
 
         echo "🧹 Running library cleanup script..."
    
@@ -111,12 +111,12 @@ jobs:
         [ -f "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         [ -x "$APP_PATH/Contents/MacOS/QuickLauncher" ] || exit 1
         
-        # Step 4: Package app bundle like CI workflow, but don't compress for release
-        echo " moving $APP_PATH to CI-Artifacts/Release/${{ matrix.config_name }}/QuickLauncher.app "
-        mv $APP_PATH CI-Artifacts/Release/${{ matrix.config_name }}/QuickLauncher.app
+        # Step 4: Package app bundle like CI workflow
+        echo " moving $APP_PATH to CI-Artifacts/QuickLauncher.app "
+        mv $APP_PATH CI-Artifacts/QuickLauncher.app
         
         # Verify deployment target in Info.plist
-        INFO_PLIST="CI-Artifacts/Release/${{ matrix.config_name }}/QuickLauncher.app/Contents/Info.plist"
+        INFO_PLIST="CI-Artifacts/QuickLauncher.app/Contents/Info.plist"
         if [ -f "$INFO_PLIST" ]; then
           echo "✅ ${{ matrix.config_name }} Info.plist exists, updating deployment target..."
           /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${{ matrix.deployment_target }}" "$INFO_PLIST" 2>/dev/null || echo "⚠️ Could not update deployment target"
@@ -153,42 +153,80 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: artifacts # Download all artifacts into 'artifacts' directory
-        # merge-multiple: true # Uncomment if you want to merge artifacts with the same name
+        merge-multiple: true # Merge artifacts to simplify directory structure
         
     - name: Extract Build Artifacts
       run: |
+        # Create Release directories
+        rm -rf Release
+        mkdir -p Release/Intel Release/ARM64
+        
         # Check what artifacts were downloaded
         echo "📋 Downloaded artifacts structure:"
         find artifacts -type d
         ls -la artifacts/ || echo "Empty artifacts directory"
 
-        INTEL_ARTIFACT=$(find artifacts -name "*Intel-build-*" -type d | head -1)/Release/Intel
-        ARM64_ARTIFACT=$(find artifacts -name "*ARM64-build-*" -type d | head -1)/Release/ARM64
-        if [ ! -d "$INTEL_ARTIFACT" ] || [ ! -d "$ARM64_ARTIFACT" ]; then
+        # Find Intel and ARM64 artifacts and extract the apps directly
+        INTEL_ARTIFACT_DIR=$(find artifacts -name "*Intel-build*" -type d | head -1)
+        ARM64_ARTIFACT_DIR=$(find artifacts -name "*ARM64-build*" -type d | head -1)
+        
+        echo "📋 Found Intel artifact: $INTEL_ARTIFACT_DIR"
+        echo "📋 Found ARM64 artifact: $ARM64_ARTIFACT_DIR"
+        
+        if [ ! -d "$INTEL_ARTIFACT_DIR" ] || [ ! -d "$ARM64_ARTIFACT_DIR" ]; then
           echo "❌ Could not find Intel or ARM64 build artifacts"
+          find artifacts -type d -name "*build*"
           exit 1
         fi
         
-        # check for app bundles
-        if [ ! -d "$INTEL_ARTIFACT/QuickLauncher.app" ] || [ ! -d "$ARM64_ARTIFACT/QuickLauncher.app" ]; then
+        # Look for QuickLauncher.app in each artifact directory
+        INTEL_APP=$(find "$INTEL_ARTIFACT_DIR" -name "QuickLauncher.app" -type d | head -1)
+        ARM64_APP=$(find "$ARM64_ARTIFACT_DIR" -name "QuickLauncher.app" -type d | head -1)
+        
+        if [ ! -d "$INTEL_APP" ] || [ ! -d "$ARM64_APP" ]; then
           echo "❌ Missing Intel or ARM64 QuickLauncher.app in artifacts"
+          echo "Intel app search result: $INTEL_APP"
+          echo "ARM64 app search result: $ARM64_APP"
+          find "$INTEL_ARTIFACT_DIR" -name "*.app" -type d || echo "No .app found in Intel artifact"
+          find "$ARM64_ARTIFACT_DIR" -name "*.app" -type d || echo "No .app found in ARM64 artifact"
           exit 1
         fi
-        # Clean up any existing Release directory
-        rm -rf Release
-        mkdir -p Release
-        # Move the extracted Release directories to current working directory
-        mv $INTEL_ARTIFACT Release/Intel
-        mv $ARM64_ARTIFACT Release/ARM64
+        
+        # Move apps to final locations (using mv to preserve structure)
+        echo "📋 Moving Intel app from: $INTEL_APP"
+        mv "$INTEL_APP" Release/Intel/
+        
+        echo "📋 Moving ARM64 app from: $ARM64_APP"
+        mv "$ARM64_APP" Release/ARM64/
+        
         echo "✅ Artifacts extracted to current working directory"
-        # Verify both architectures were built
+        
+        # Verify both architectures were built and fix permissions if needed
         echo "📋 Verifying build artifacts:"
         for arch in Intel ARM64; do
           if [ -d "Release/$arch/QuickLauncher.app" ]; then
             echo "✅ $arch app: $(du -sh Release/$arch/QuickLauncher.app | cut -f1)"
-            [ -f "Release/$arch/QuickLauncher.app/Contents/MacOS/QuickLauncher" ] && echo "  ✅ Executable exists" || echo "  ❌ Executable missing"
+            
+            # Check and fix executable permissions
+            EXECUTABLE="Release/$arch/QuickLauncher.app/Contents/MacOS/QuickLauncher"
+            if [ -f "$EXECUTABLE" ]; then
+              echo "  ✅ Executable exists: $EXECUTABLE"
+              # Ensure executable has proper permissions
+              chmod +x "$EXECUTABLE"
+              ls -la "$EXECUTABLE"
+            else
+              echo "  ❌ Executable missing"
+              exit 1
+            fi
+            
+            # Verify app bundle structure
             [ -d "Release/$arch/QuickLauncher.app/Contents/Frameworks" ] && echo "  ✅ Frameworks exists" || echo "  ❌ Frameworks missing"
             [ -d "Release/$arch/QuickLauncher.app/Contents/Resources" ] && echo "  ✅ Resources exists" || echo "  ❌ Resources missing"
+            
+            # Fix ownership and permissions for the entire app bundle
+            chown -R runner:staff "Release/$arch/QuickLauncher.app" 2>/dev/null || true
+            chmod -R u+rw,go+r-w "Release/$arch/QuickLauncher.app" 2>/dev/null || true
+            
           else
             echo "❌ $arch app not found"
             exit 1
@@ -401,6 +439,8 @@ jobs:
           QuickLauncher-Intel.zip.sha256
           QuickLauncher-ARM64.zip
           QuickLauncher-ARM64.zip.sha256
+          artifacts/*/build-output-Intel.tar.xz
+          artifacts/*/build-output-ARM64.tar.xz
         body_path: release_notes.md
         draft: false
         prerelease: false

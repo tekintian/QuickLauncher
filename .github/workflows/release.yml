@@ -352,11 +352,11 @@ jobs:
         
     - name: Create ZIP
       run: |
-        # Create ZIP archives for both architectures
+        # Create ZIP archives for both architectures (preserve symlinks)
         cd Release/Intel
-        zip -r ../../QuickLauncher-Intel.zip QuickLauncher.app
+        zip -ry ../../QuickLauncher-Intel.zip QuickLauncher.app
         cd ../ARM64
-        zip -r ../../QuickLauncher-ARM64.zip QuickLauncher.app
+        zip -ry ../../QuickLauncher-ARM64.zip QuickLauncher.app
         cd ../..
         
     - name: Generate Checksum

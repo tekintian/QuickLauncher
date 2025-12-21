@@ -338,12 +338,16 @@ jobs:
         
     - name: Generate Release Notes
       run: |
-        # Get current tag version
-        TAG_VERSION=${GITHUB_REF#refs/tags/}
+        # Get version from tag or commit hash
+        if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/}
+        else
+          VERSION="build-$(git rev-parse --short HEAD)"
+        fi
         
         # Generate release notes in both Chinese and English
         cat > release_notes.md << EOF
-        # 🚀 QuickLauncher $TAG_VERSION
+        # 🚀 QuickLauncher $VERSION
         
         ## 简体中文 | Chinese
         
